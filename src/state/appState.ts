@@ -7,11 +7,13 @@
  * История версий:
  * 1 — сценарии (цена, взнос, ставка, срок).
  * 2 — счета, ручные курсы, валюта сделки в сценарии.
+ * 3 — карточки банков, ставка рефинансирования, выбор карточки в сценарии.
  */
 
-import { CURRENCIES, type Account, type Currency, type FxRates } from '../domain';
+import { CURRENCIES, type Account, type CreditProduct, type Currency, type FxRates, type RatePeriod } from '../domain';
+import { sampleProducts } from './sampleProducts';
 
-export const STATE_VERSION = 2;
+export const STATE_VERSION = 3;
 
 export interface Scenario {
   id: string;
@@ -21,7 +23,9 @@ export interface Scenario {
   /** Цена объекта. */
   price: number;
   downPayment: number;
-  /** % годовых. */
+  /** Карточка банка; null — ставка вводится вручную (annualRatePct). */
+  productId: string | null;
+  /** % годовых — для ручного режима. */
   annualRatePct: number;
   termMonths: number;
 }
@@ -32,10 +36,16 @@ export interface AppState {
   scenarios: Scenario[];
   accounts: Account[];
   fxRates: FxRates;
+  products: CreditProduct[];
+  /** Ставка рефинансирования Нацбанка, % годовых — общая для всех карточек «СР + надбавка». */
+  refinancingRatePct: number;
 }
 
 /** Ориентировочные курсы для первого запуска; пользователь вводит актуальные сам. */
 export const DEFAULT_FX_RATES: FxRates = { USD: 3.0, EUR: 3.4 };
+
+/** Ставка рефинансирования НБ РБ с 01.06.2026. */
+export const DEFAULT_REFINANCING_RATE_PCT = 9.25;
 
 export function newId(): string {
   return crypto.randomUUID();
@@ -48,6 +58,7 @@ export function defaultScenario(): Scenario {
     currency: 'BYN',
     price: 300_000,
     downPayment: 60_000,
+    productId: null,
     annualRatePct: 12,
     termMonths: 240,
   };
@@ -55,6 +66,23 @@ export function defaultScenario(): Scenario {
 
 export function newAccount(): Account {
   return { id: newId(), name: '', currency: 'BYN', amount: 0, useForDownPayment: true };
+}
+
+export function newProduct(): CreditProduct {
+  return {
+    id: newId(),
+    name: 'Новая карточка',
+    ratePeriods: [{ fromMonth: 1, rate: { kind: 'refinancing', marginPct: 5 } }],
+    interestOnlyMonths: 0,
+    prepaymentBanMonths: 0,
+    maxTermMonths: 240,
+    minDownPct: 10,
+    maxLoan: null,
+    notes: '',
+    source: '',
+    checkedAt: new Date().toISOString().slice(0, 10),
+    verified: false,
+  };
 }
 
 export function defaultState(): AppState {
@@ -65,7 +93,13 @@ export function defaultState(): AppState {
     scenarios: [scenario],
     accounts: [],
     fxRates: { ...DEFAULT_FX_RATES },
+    products: sampleProducts(newId),
+    refinancingRatePct: DEFAULT_REFINANCING_RATE_PCT,
   };
+}
+
+export function findProduct(state: AppState, id: string | null): CreditProduct | undefined {
+  return id === null ? undefined : state.products.find((p) => p.id === id);
 }
 
 export function activeScenario(state: AppState): Scenario {
@@ -114,6 +148,7 @@ function parseScenario(raw: unknown, index: number, version: number): Scenario {
     currency: version >= 2 ? readCurrency(r, where) : 'BYN',
     price: readNumber(r, 'price', where),
     downPayment: readNumber(r, 'downPayment', where),
+    productId: version >= 3 && typeof r.productId === 'string' ? r.productId : null,
     annualRatePct: readNumber(r, 'annualRatePct', where),
     termMonths: readNumber(r, 'termMonths', where),
   };
@@ -128,6 +163,42 @@ function parseAccount(raw: unknown, index: number): Account {
     currency: readCurrency(r, where),
     amount: readNumber(r, 'amount', where),
     useForDownPayment: r.useForDownPayment !== false,
+  };
+}
+
+function readString(raw: Raw, key: string): string {
+  return typeof raw[key] === 'string' ? (raw[key] as string) : '';
+}
+
+function parseRatePeriod(raw: unknown, index: number, where: string): RatePeriod {
+  const w = `${where}, период ставки №${index + 1}`;
+  const r = asObject(raw, w);
+  const rate = asObject(r.rate, w);
+  const fromMonth = readNumber(r, 'fromMonth', w);
+  if (rate.kind === 'fixed') return { fromMonth, rate: { kind: 'fixed', ratePct: readNumber(rate, 'ratePct', w) } };
+  if (rate.kind === 'refinancing') {
+    return { fromMonth, rate: { kind: 'refinancing', marginPct: readNumber(rate, 'marginPct', w) } };
+  }
+  throw new RangeError(`${w}: неизвестный тип ставки «${String(rate.kind)}»`);
+}
+
+function parseProduct(raw: unknown, index: number): CreditProduct {
+  const where = `Карточка банка №${index + 1}`;
+  const r = asObject(raw, where);
+  if (!Array.isArray(r.ratePeriods)) throw new RangeError(`${where}: нет списка ставок («ratePeriods»)`);
+  return {
+    id: readId(r, where),
+    name: readString(r, 'name'),
+    ratePeriods: r.ratePeriods.map((p, i) => parseRatePeriod(p, i, where)),
+    interestOnlyMonths: readNumber(r, 'interestOnlyMonths', where),
+    prepaymentBanMonths: readNumber(r, 'prepaymentBanMonths', where),
+    maxTermMonths: readNumber(r, 'maxTermMonths', where),
+    minDownPct: readNumber(r, 'minDownPct', where),
+    maxLoan: r.maxLoan === null || r.maxLoan === undefined ? null : readNumber(r, 'maxLoan', where),
+    notes: readString(r, 'notes'),
+    source: readString(r, 'source'),
+    checkedAt: readString(r, 'checkedAt'),
+    verified: r.verified === true,
   };
 }
 
@@ -147,7 +218,7 @@ export function parseState(json: string): AppState {
   }
   const r = asObject(parsed, 'Данные калькулятора');
   const version = r.version;
-  if (version !== 1 && version !== 2) {
+  if (version !== 1 && version !== 2 && version !== 3) {
     throw new RangeError(`Неизвестная версия данных: ${String(version)} (поддерживаются 1–${STATE_VERSION})`);
   }
   if (!Array.isArray(r.scenarios) || r.scenarios.length === 0) {
@@ -166,7 +237,24 @@ export function parseState(json: string): AppState {
     fxRates = { USD: readNumber(rates, 'USD', 'Курсы валют'), EUR: readNumber(rates, 'EUR', 'Курсы валют') };
   }
 
+  let products: CreditProduct[];
+  let refinancingRatePct = DEFAULT_REFINANCING_RATE_PCT;
+  if (version >= 3) {
+    if (!Array.isArray(r.products)) throw new RangeError('Нет списка карточек банков («products»)');
+    products = r.products.map(parseProduct);
+    uniqueIds(products, 'карточек банков');
+    refinancingRatePct = readNumber(r, 'refinancingRatePct', 'Данные калькулятора');
+  } else {
+    // До версии 3 карточек не было — даём стартовые примеры из исследования.
+    products = sampleProducts(newId);
+  }
+  const productIds = new Set(products.map((p) => p.id));
+  // Ссылка на удалённую карточку → ручной режим, а не ошибка.
+  for (const scenario of scenarios) {
+    if (scenario.productId !== null && !productIds.has(scenario.productId)) scenario.productId = null;
+  }
+
   const activeScenarioId =
     typeof r.activeScenarioId === 'string' && scenarioIds.has(r.activeScenarioId) ? r.activeScenarioId : scenarios[0]!.id;
-  return { version: STATE_VERSION, activeScenarioId, scenarios, accounts, fxRates };
+  return { version: STATE_VERSION, activeScenarioId, scenarios, accounts, fxRates, products, refinancingRatePct };
 }

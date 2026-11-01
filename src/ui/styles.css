@@ -74,3 +74,39 @@ button.icon { padding: 4px 8px; color: #868e96; }
   .accounts tr { display: grid; grid-template-columns: 1fr auto auto auto; gap: 4px; margin-bottom: 8px; }
   .accounts td:first-child { grid-column: 1 / -1; width: auto; }
 }
+
+textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; font: inherit; border: 1px solid #c8ccd1; border-radius: 4px; }
+.field.checkbox { flex-direction: row; align-items: center; gap: 8px; align-self: end; padding-bottom: 6px; }
+.muted { color: #868e96; }
+
+.product-in-deal { margin-top: 12px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px; }
+.product-in-deal ul { margin: 0; padding-left: 18px; font-size: 0.9rem; }
+.warning { margin: 6px 0 0; color: #b35c00; font-size: 0.9rem; }
+
+.products { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.product { border: 1px solid #e9ecef; border-radius: 6px; padding: 8px 12px; }
+.product summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.product-brief { flex-basis: 100%; font-size: 0.85rem; color: #59636e; }
+.badge { font-size: 0.75rem; padding: 1px 6px; border-radius: 10px; background: #fff3bf; color: #8a6d00; }
+.product-editor { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.product-editor h3 { margin: 8px 0 0; }
+.product-editor > button { align-self: flex-start; }
+.product-actions { display: flex; gap: 8px; margin-top: 12px; }
+
+.periods { width: auto; }
+.periods th, .periods td { text-align: left; padding: 4px 8px 4px 0; border: none; }
+.periods th { font-weight: 500; font-size: 0.85rem; color: #59636e; position: static; }
+.periods input { width: 120px; }
+.periods select { width: 180px; }
+.periods input, .periods select { padding: 6px 8px; font-size: 1rem; border: 1px solid #c8ccd1; border-radius: 4px; box-sizing: border-box; }
+
+.phases { list-style: none; margin: 0; padding: 0; }
+.phases li { display: flex; align-items: baseline; gap: 6px; }
+.phases li span { display: inline; font-size: 0.8rem; }
+
+@media (max-width: 600px) {
+  .periods input, .periods select { width: 100%; }
+  .periods { width: 100%; table-layout: fixed; }
+  .periods th:last-child, .periods td:last-child { width: 36px; }
+  .periods th { font-size: 0.75rem; white-space: normal; }
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   activeScenario,
+  DEFAULT_REFINANCING_RATE_PCT,
   DEFAULT_FX_RATES,
   defaultState,
   newAccount,
@@ -10,6 +11,20 @@ import {
 } from './appState';
 
 describe('serializeState / parseState', () => {
+  it('карточки банков и ставка рефинансирования переживают сохранение', () => {
+    const state = defaultState();
+    state.products[0]!.maxLoan = 150_000;
+    state.refinancingRatePct = 10;
+    state.scenarios[0]!.productId = state.products[1]!.id;
+    expect(parseState(serializeState(state))).toEqual(state);
+  });
+
+  it('ссылка на несуществующую карточку → ручная ставка', () => {
+    const state = defaultState();
+    state.scenarios[0]!.productId = 'удалена';
+    expect(parseState(serializeState(state)).scenarios[0]!.productId).toBeNull();
+  });
+
   it('сохранение и загрузка дают то же состояние (со счетами и курсами)', () => {
     const state = defaultState();
     state.accounts = [{ ...newAccount(), name: 'Наличные', currency: 'USD', amount: 5_000, useForDownPayment: false }];
@@ -51,13 +66,31 @@ describe('миграция с версии 1', () => {
     scenarios: [{ id: 's1', name: 'Старый', price: 300_000, downPayment: 60_000, annualRatePct: 12, termMonths: 240 }],
   });
 
-  it('сценарии сохраняются, валюта — BYN, счетов нет, курсы по умолчанию', () => {
+  it('сценарии сохраняются, валюта — BYN, счетов нет, курсы по умолчанию, ставка ручная', () => {
     const state = parseState(v1);
-    expect(state.version).toBe(2);
+    expect(state.version).toBe(3);
     expect(state.scenarios[0]).toEqual({
-      id: 's1', name: 'Старый', currency: 'BYN', price: 300_000, downPayment: 60_000, annualRatePct: 12, termMonths: 240,
+      id: 's1', name: 'Старый', currency: 'BYN', price: 300_000, downPayment: 60_000,
+      productId: null, annualRatePct: 12, termMonths: 240,
     });
+    expect(state.products.length).toBeGreaterThan(0);
+    expect(state.refinancingRatePct).toBe(9.25);
     expect(state.accounts).toEqual([]);
     expect(state.fxRates).toEqual(DEFAULT_FX_RATES);
+  });
+});
+
+describe('миграция с версии 2', () => {
+  it('счета и курсы сохраняются, появляются примеры карточек и СР 9,25', () => {
+    const v3 = JSON.parse(serializeState(defaultState()));
+    const v2 = { ...v3, version: 2, accounts: [{ id: 'a', name: 'Карта', currency: 'USD', amount: 100, useForDownPayment: true }] };
+    delete v2.products;
+    delete v2.refinancingRatePct;
+    v2.scenarios = v2.scenarios.map(({ productId: _, ...rest }: Record<string, unknown>) => rest);
+    const state = parseState(JSON.stringify(v2));
+    expect(state.accounts[0]!.name).toBe('Карта');
+    expect(state.products.every((p) => !p.verified)).toBe(true);
+    expect(state.refinancingRatePct).toBe(DEFAULT_REFINANCING_RATE_PCT);
+    expect(state.scenarios[0]!.productId).toBeNull();
   });
 });

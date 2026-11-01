@@ -8,6 +8,23 @@ export interface LoanParams {
   termMonths: number;
 }
 
+/** Ставка, действующая с указанного месяца (включительно) до начала следующего периода. */
+export interface RateStep {
+  /** Номер месяца, с которого действует ставка; у первого шага — 1. */
+  fromMonth: number;
+  /** % годовых. */
+  annualRatePct: number;
+}
+
+/** Кредит со ставкой по периодам и, возможно, периодом «только проценты». */
+export interface VariableLoanParams {
+  principal: number;
+  termMonths: number;
+  rateSteps: RateStep[];
+  /** Первые N месяцев платятся только проценты, тело долга не гасится. 0 — нет такого периода. */
+  interestOnlyMonths: number;
+}
+
 /** Одна строка графика платежей. Месяцы нумеруются с 1, без календарных дат. */
 export interface ScheduleRow {
   month: number;
@@ -32,9 +49,16 @@ export interface YearTotals {
 
 export interface PaymentSchedule {
   rows: ScheduleRow[];
-  /** Регулярный ежемесячный платёж. */
+  /** Платёж первого месяца. Если ставка или режим меняются, дальше платёж другой — см. paymentPhases. */
   monthlyPayment: number;
   totalPaid: number;
   totalInterest: number;
   totalPrincipal: number;
+}
+
+/** Отрезок графика с одинаковым платежом: «месяцы 1–24 — 2 500». */
+export interface PaymentPhase {
+  fromMonth: number;
+  toMonth: number;
+  payment: number;
 }

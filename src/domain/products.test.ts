@@ -1,0 +1,64 @@
+import { describe, expect, it } from 'vitest';
+import { checkDealAgainstProduct, productRateSteps, resolveRate, type CreditProduct } from './products';
+
+const product = (patch: Partial<CreditProduct> = {}): CreditProduct => ({
+  id: 'p',
+  name: 'Тест',
+  ratePeriods: [
+    { fromMonth: 1, rate: { kind: 'fixed', ratePct: 1 } },
+    { fromMonth: 25, rate: { kind: 'refinancing', marginPct: 6.15 } },
+  ],
+  interestOnlyMonths: 12,
+  prepaymentBanMonths: 60,
+  maxTermMonths: 240,
+  minDownPct: 10,
+  maxLoan: 200_000,
+  notes: '',
+  source: '',
+  checkedAt: '2026-11-01',
+  verified: false,
+  ...patch,
+});
+
+describe('resolveRate', () => {
+  it('СР 9,25 + 6,15 п.п. = 15,4% (Беларусбанк «Ипотека с нами» после льготы)', () => {
+    expect(resolveRate({ kind: 'refinancing', marginPct: 6.15 }, 9.25)).toBeCloseTo(15.4, 10);
+  });
+  it('фиксированная не зависит от СР', () => {
+    expect(resolveRate({ kind: 'fixed', ratePct: 14.9 }, Number.NaN)).toBe(14.9);
+  });
+  it('без СР «плавающую» не посчитать', () => {
+    expect(() => resolveRate({ kind: 'refinancing', marginPct: 4 }, Number.NaN)).toThrow('ставка рефинансирования');
+  });
+});
+
+describe('productRateSteps', () => {
+  it('1% с 1-го месяца, СР+6,15 с 25-го', () => {
+    const steps = productRateSteps(product(), 9.25);
+    expect(steps[0]).toEqual({ fromMonth: 1, annualRatePct: 1 });
+    expect(steps[1]!.fromMonth).toBe(25);
+    expect(steps[1]!.annualRatePct).toBeCloseTo(15.4, 10);
+  });
+});
+
+describe('checkDealAgainstProduct', () => {
+  const ok = { price: 200_000, downPayment: 20_000, termMonths: 240 };
+
+  it('всё в рамках — нет замечаний', () => {
+    expect(checkDealAgainstProduct(product(), ok)).toEqual([]);
+  });
+  it('взнос ровно на минимуме — допустим', () => {
+    expect(checkDealAgainstProduct(product(), { ...ok, downPayment: 20_000 })).toEqual([]);
+  });
+  it('каждое нарушение — отдельное замечание', () => {
+    const problems = checkDealAgainstProduct(product(), { price: 300_000, downPayment: 10_000, termMonths: 300 });
+    expect(problems).toHaveLength(3);
+    expect(problems[0]).toContain('10%');
+    expect(problems[1]).toContain('20 лет');
+    expect(problems[2]).toContain('лимита');
+  });
+  it('лимит не указан — сумма не проверяется', () => {
+    expect(checkDealAgainstProduct(product({ maxLoan: null }), { ...ok, price: 10_000_000, downPayment: 1_000_000 }))
+      .toEqual([]);
+  });
+});
