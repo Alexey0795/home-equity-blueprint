@@ -8,12 +8,22 @@
  * 1 — сценарии (цена, взнос, ставка, срок).
  * 2 — счета, ручные курсы, валюта сделки в сценарии.
  * 3 — карточки банков, ставка рефинансирования, выбор карточки в сценарии.
+ * 4 — режим «зафиксировать всё, кроме одного»: свободная величина и желаемый платёж в сценарии.
  */
 
-import { CURRENCIES, type Account, type CreditProduct, type Currency, type FxRates, type RatePeriod } from '../domain';
+import {
+  CURRENCIES,
+  FREE_VARIABLES,
+  type Account,
+  type CreditProduct,
+  type Currency,
+  type FreeVariable,
+  type FxRates,
+  type RatePeriod,
+} from '../domain';
 import { sampleProducts } from './sampleProducts';
 
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
 
 export interface Scenario {
   id: string;
@@ -28,6 +38,10 @@ export interface Scenario {
   /** % годовых — для ручного режима. */
   annualRatePct: number;
   termMonths: number;
+  /** Какая величина вычисляется; остальные зафиксированы. */
+  freeVariable: FreeVariable;
+  /** Желаемый (максимальный) ежемесячный платёж — используется, когда свободен не платёж. */
+  targetPayment: number;
 }
 
 export interface AppState {
@@ -47,6 +61,8 @@ export const DEFAULT_FX_RATES: FxRates = { USD: 3.0, EUR: 3.4 };
 /** Ставка рефинансирования НБ РБ с 01.06.2026. */
 export const DEFAULT_REFINANCING_RATE_PCT = 9.25;
 
+export const DEFAULT_TARGET_PAYMENT = 3_000;
+
 export function newId(): string {
   return crypto.randomUUID();
 }
@@ -61,6 +77,8 @@ export function defaultScenario(): Scenario {
     productId: null,
     annualRatePct: 12,
     termMonths: 240,
+    freeVariable: 'payment',
+    targetPayment: DEFAULT_TARGET_PAYMENT,
   };
 }
 
@@ -151,7 +169,18 @@ function parseScenario(raw: unknown, index: number, version: number): Scenario {
     productId: version >= 3 && typeof r.productId === 'string' ? r.productId : null,
     annualRatePct: readNumber(r, 'annualRatePct', where),
     termMonths: readNumber(r, 'termMonths', where),
+    // До версии 4 решателя не было — платёж вычислялся, остальное было задано.
+    freeVariable: version >= 4 ? readFreeVariable(r, where) : 'payment',
+    targetPayment: version >= 4 ? readNumber(r, 'targetPayment', where) : DEFAULT_TARGET_PAYMENT,
   };
+}
+
+function readFreeVariable(raw: Raw, where: string): FreeVariable {
+  const value = raw.freeVariable;
+  if (!FREE_VARIABLES.includes(value as FreeVariable)) {
+    throw new RangeError(`${where}: неизвестная вычисляемая величина «${String(value)}»`);
+  }
+  return value as FreeVariable;
 }
 
 function parseAccount(raw: unknown, index: number): Account {
@@ -218,7 +247,7 @@ export function parseState(json: string): AppState {
   }
   const r = asObject(parsed, 'Данные калькулятора');
   const version = r.version;
-  if (version !== 1 && version !== 2 && version !== 3) {
+  if (typeof version !== 'number' || !Number.isInteger(version) || version < 1 || version > STATE_VERSION) {
     throw new RangeError(`Неизвестная версия данных: ${String(version)} (поддерживаются 1–${STATE_VERSION})`);
   }
   if (!Array.isArray(r.scenarios) || r.scenarios.length === 0) {

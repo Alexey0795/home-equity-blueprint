@@ -110,3 +110,14 @@ textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; font: inherit;
   .periods th:last-child, .periods td:last-child { width: 36px; }
   .periods th { font-size: 0.75rem; white-space: normal; }
 }
+
+.free-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
+.free-picker > span { font-size: 0.9rem; margin-right: 4px; }
+.free-picker button.active { background: #1c7ed6; border-color: #1c7ed6; color: #fff; }
+.free-picker + .hint { margin: 4px 0 12px; }
+
+.field.computed output {
+  display: block; padding: 6px 8px; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  border: 1px dashed #1c7ed6; border-radius: 4px; background: #e7f5ff; color: #1864ab;
+}
+.field.computed small { font-size: 0.75rem; color: #1c7ed6; }

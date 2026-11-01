@@ -68,10 +68,10 @@ describe('миграция с версии 1', () => {
 
   it('сценарии сохраняются, валюта — BYN, счетов нет, курсы по умолчанию, ставка ручная', () => {
     const state = parseState(v1);
-    expect(state.version).toBe(3);
+    expect(state.version).toBe(4);
     expect(state.scenarios[0]).toEqual({
       id: 's1', name: 'Старый', currency: 'BYN', price: 300_000, downPayment: 60_000,
-      productId: null, annualRatePct: 12, termMonths: 240,
+      productId: null, annualRatePct: 12, termMonths: 240, freeVariable: 'payment', targetPayment: 3_000,
     });
     expect(state.products.length).toBeGreaterThan(0);
     expect(state.refinancingRatePct).toBe(9.25);
@@ -92,5 +92,19 @@ describe('миграция с версии 2', () => {
     expect(state.products.every((p) => !p.verified)).toBe(true);
     expect(state.refinancingRatePct).toBe(DEFAULT_REFINANCING_RATE_PCT);
     expect(state.scenarios[0]!.productId).toBeNull();
+  });
+});
+
+describe('версия 4: режим «зафиксировать всё, кроме одного»', () => {
+  it('свободная величина и желаемый платёж переживают сохранение', () => {
+    const state = defaultState();
+    state.scenarios[0]!.freeVariable = 'rate';
+    state.scenarios[0]!.targetPayment = 2_500;
+    expect(parseState(serializeState(state)).scenarios[0]).toMatchObject({ freeVariable: 'rate', targetPayment: 2_500 });
+  });
+  it('неизвестная свободная величина → понятная ошибка', () => {
+    const raw = JSON.parse(serializeState(defaultState()));
+    raw.scenarios[0].freeVariable = 'inflation';
+    expect(() => parseState(JSON.stringify(raw))).toThrow('«inflation»');
   });
 });

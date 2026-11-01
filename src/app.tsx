@@ -1,30 +1,34 @@
 import { useMemo } from 'react';
 import {
-  buildSchedule,
   checkDealAgainstProduct,
   convert,
   loanAmount,
+  maxPayment,
   paymentPhases,
-  productRateSteps,
+  solveDeal,
   summarizeSavings,
   yearlyTotals,
   type Currency,
-  type RateStep,
+  type DealInput,
+  type FreeVariable,
 } from './domain';
 import { activeScenario, findProduct, type Scenario } from './state/appState';
 import { useAppState } from './state/useAppState';
 import { OverpaymentChart } from './ui/charts/OverpaymentChart';
 import { YearlyPaymentsChart } from './ui/charts/YearlyPaymentsChart';
+import { ComputedField } from './ui/ComputedField';
 import { CurrencySelect } from './ui/CurrencySelect';
-import { describeProduct } from './ui/describeProduct';
+import { describeProduct, formatPct } from './ui/describeProduct';
 import { DataFileButtons } from './ui/DataFileButtons';
-import { formatMoney } from './ui/format';
+import { formatMoney, formatTerm } from './ui/format';
+import { FREE_VARIABLE_HINTS, FreeVariablePicker } from './ui/FreeVariablePicker';
 import { NumberField } from './ui/NumberField';
 import { ProductsSection } from './ui/ProductsSection';
 import { SavingsSection } from './ui/SavingsSection';
 import { ScheduleTable } from './ui/ScheduleTable';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function App() {
   const [state, setState] = useAppState();
@@ -41,11 +45,12 @@ export function App() {
   /** Смена валюты сделки пересчитывает цену и взнос по курсу, чтобы квартира не подешевела в 3 раза. */
   function changeCurrency(to: Currency) {
     try {
-      const round = (n: number) => Math.round(n * 100) / 100;
+      const conv = (n: number) => round2(convert(n, currency, to, state.fxRates));
       update({
         currency: to,
-        price: round(convert(scenario.price, currency, to, state.fxRates)),
-        downPayment: round(convert(scenario.downPayment, currency, to, state.fxRates)),
+        price: conv(scenario.price),
+        downPayment: conv(scenario.downPayment),
+        targetPayment: conv(scenario.targetPayment),
       });
     } catch {
       // Курс не введён — пересчитать нечем, просто меняем валюту.
@@ -61,26 +66,52 @@ export function App() {
     }
   }, [state.accounts, state.fxRates, currency]);
 
-  const loan = loanAmount(scenario.price, scenario.downPayment);
-
   const product = findProduct(state, scenario.productId);
+  const free = scenario.freeVariable;
 
   const result = useMemo(() => {
+    const input: DealInput = {
+      price: scenario.price,
+      downPayment: scenario.downPayment,
+      termMonths: scenario.termMonths,
+      targetPayment: scenario.targetPayment,
+      rate: product
+        ? { kind: 'product', product, refinancingRatePct: state.refinancingRatePct }
+        : { kind: 'manual', annualRatePct: scenario.annualRatePct },
+    };
     try {
-      const rateSteps: RateStep[] = product
-        ? productRateSteps(product, state.refinancingRatePct)
-        : [{ fromMonth: 1, annualRatePct: scenario.annualRatePct }];
-      const schedule = buildSchedule({
-        principal: loan,
-        termMonths: scenario.termMonths,
-        rateSteps,
-        interestOnlyMonths: product?.interestOnlyMonths ?? 0,
-      });
-      return { schedule, phases: paymentPhases(schedule), years: yearlyTotals(schedule) };
+      const { deal, schedule } = solveDeal(free, input);
+      return { deal, schedule, phases: paymentPhases(schedule), years: yearlyTotals(schedule) };
     } catch (e) {
       return { error: errorText(e) };
     }
-  }, [loan, product, state.refinancingRatePct, scenario.annualRatePct, scenario.termMonths]);
+  }, [free, product, state.refinancingRatePct, scenario]);
+
+  /** Сделка с вычисленной величиной; если не сошлось — как ввёл пользователь. */
+  const deal = 'error' in result ? scenario : result.deal;
+  const loan = loanAmount(deal.price, deal.downPayment);
+  const solvedRefinancing =
+    !('error' in result) && result.deal.rate.kind === 'product' ? result.deal.rate.refinancingRatePct : state.refinancingRatePct;
+  const solvedManualRate =
+    !('error' in result) && result.deal.rate.kind === 'manual' ? result.deal.rate.annualRatePct : scenario.annualRatePct;
+
+  /**
+   * Смена свободной величины: вычисленные сейчас значения становятся зафиксированными, чтобы экран не прыгал.
+   * Подобранная ставка рефинансирования общая для всех сценариев — её не записываем.
+   */
+  function chooseFree(next: FreeVariable) {
+    if (next === free) return;
+    const patch: Partial<Scenario> = { freeVariable: next };
+    if (!('error' in result)) {
+      patch.price = round2(result.deal.price);
+      patch.downPayment = round2(result.deal.downPayment);
+      patch.termMonths = result.deal.termMonths;
+      if (result.deal.rate.kind === 'manual') patch.annualRatePct = Math.round(result.deal.rate.annualRatePct * 1000) / 1000;
+      // Округляем вверх: иначе желаемый платёж окажется на доли копейки меньше текущего и срок «прыгнет» на месяц.
+      if (free === 'payment') patch.targetPayment = Math.ceil(maxPayment(result.schedule) * 100) / 100;
+    }
+    update(patch);
+  }
 
   /** Замечания «банк так не даст». Лимит суммы в карточке — в BYN, сделка может быть в другой валюте. */
   const productProblems = useMemo(() => {
@@ -93,8 +124,8 @@ export function App() {
         maxLoan = null;
       }
     }
-    return checkDealAgainstProduct({ ...product, maxLoan }, scenario);
-  }, [product, scenario, currency, state.fxRates]);
+    return checkDealAgainstProduct({ ...product, maxLoan }, deal);
+  }, [product, deal, currency, state.fxRates]);
 
   const canUseAllSavings = !('error' in savings) && savings.availableForDown > 0;
 
@@ -116,8 +147,22 @@ export function App() {
             <CurrencySelect label="Валюта сделки" value={currency} onChange={changeCurrency} />
           </label>
         </div>
+        <FreeVariablePicker value={free} onChange={chooseFree}
+          rateLabel={product ? 'Ставку рефинансирования' : 'Ставку'} />
+        <p className="hint">{FREE_VARIABLE_HINTS[free]}</p>
         <div className="fields">
-          <NumberField label={`Цена квартиры, ${currency}`} value={scenario.price} onChange={(price) => update({ price })} step={1000} />
+          {free !== 'payment' && (
+            <NumberField label={`Платёж не больше, ${currency}`} value={scenario.targetPayment}
+              onChange={(targetPayment) => update({ targetPayment })} step={50} />
+          )}
+          {free === 'price' ? (
+            <ComputedField label={`Цена квартиры, ${currency}`} value={'error' in result ? '—' : formatMoney(deal.price)} />
+          ) : (
+            <NumberField label={`Цена квартиры, ${currency}`} value={scenario.price} onChange={(price) => update({ price })} step={1000} />
+          )}
+          {free === 'downPayment' ? (
+            <ComputedField label={`Первый взнос, ${currency}`} value={'error' in result ? '—' : formatMoney(deal.downPayment)} />
+          ) : (
           <div className="field-with-action">
             <NumberField label={`Первый взнос, ${currency}`} value={scenario.downPayment}
               onChange={(downPayment) => update({ downPayment })} step={1000} />
@@ -130,6 +175,7 @@ export function App() {
               = все сбережения
             </button>
           </div>
+          )}
           <label className="field">
             <span>Условия кредита</span>
             <select aria-label="Условия кредита" value={scenario.productId ?? ''}
@@ -140,22 +186,38 @@ export function App() {
               ))}
             </select>
           </label>
-          {!product && (
+          {!product && (free === 'rate' ? (
+            <ComputedField label="Ставка, % годовых" value={'error' in result ? '—' : formatPct(solvedManualRate)} />
+          ) : (
             <NumberField label="Ставка, % годовых" value={scenario.annualRatePct}
               onChange={(annualRatePct) => update({ annualRatePct })} step={0.1} />
+          ))}
+          {product && free === 'rate' && (
+            <ComputedField label="Ставка рефинансирования" value={'error' in result ? '—' : formatPct(solvedRefinancing)} />
           )}
-          <NumberField label="Срок, лет" value={scenario.termMonths / 12} step={0.5} min={0.5}
-            onChange={(years) => update({ termMonths: Math.round(years * 12) })} />
+          {free === 'term' ? (
+            <ComputedField label="Срок" value={'error' in result ? '—' : formatTerm(deal.termMonths)} />
+          ) : (
+            <div className="field-with-action">
+              {/* Срок хранится в месяцах; в годах показываем с округлением, точное значение — подписью. */}
+              <NumberField label="Срок, лет" value={Math.round((scenario.termMonths / 12) * 100) / 100} step={0.5} min={0.5}
+                onChange={(years) => update({ termMonths: Math.round(years * 12) })} />
+              {scenario.termMonths % 12 !== 0 && Number.isFinite(scenario.termMonths) && (
+                <small className="muted">{formatTerm(scenario.termMonths)}</small>
+              )}
+            </div>
+          )}
         </div>
         {product && (
           <div className="product-in-deal">
             <ul>
-              {describeProduct(product, state.refinancingRatePct).map((line) => <li key={line}>{line}</li>)}
+              {describeProduct(product, solvedRefinancing).map((line) => <li key={line}>{line}</li>)}
             </ul>
             {product.notes && <p className="hint">{product.notes}</p>}
             {productProblems.map((problem) => <p key={problem} className="warning">⚠ {problem}</p>)}
           </div>
         )}
+        {'error' in result && <p className="error">{result.error}</p>}
         <p className="hint">Данные сохраняются в этом браузере автоматически. Чтобы перенести их или сделать копию — «Скачать JSON».</p>
       </section>
 
@@ -163,7 +225,7 @@ export function App() {
         accounts={state.accounts}
         fxRates={state.fxRates}
         dealCurrency={currency}
-        downPayment={scenario.downPayment}
+        downPayment={deal.downPayment}
         summary={savings}
         onAccountsChange={(accounts) => setState((s) => ({ ...s, accounts }))}
         onRatesChange={(fxRates) => setState((s) => ({ ...s, fxRates }))}
@@ -185,9 +247,7 @@ export function App() {
         onRefinancingChange={(refinancingRatePct) => setState((s) => ({ ...s, refinancingRatePct }))}
       />
 
-      {'error' in result ? (
-        <p className="error">{result.error}</p>
-      ) : (
+      {'error' in result ? null : (
         <>
           <section className="card summary">
             <div><span>Сумма кредита</span><strong>{formatMoney(loan, currency)}</strong></div>
