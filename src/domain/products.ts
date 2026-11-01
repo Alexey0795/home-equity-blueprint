@@ -1,4 +1,4 @@
-import type { RateStep } from './types';
+import type { PrepaymentPlan, RateStep } from './types';
 
 /** Как задана ставка в периоде: фиксированная или «ставка рефинансирования Нацбанка + надбавка». */
 export type RateSpec =
@@ -77,4 +77,12 @@ export function checkDealAgainstProduct(product: CreditProduct, deal: DealTerms)
     problems.push('Срок короче периода «только проценты»');
   }
   return problems;
+}
+
+/** Досрочные взносы, попавшие в период запрета досрочного погашения. Предупреждение, а не ошибка. */
+export function prepaymentBanProblems(product: CreditProduct, prepayments: PrepaymentPlan[]): string[] {
+  if (product.prepaymentBanMonths <= 0) return [];
+  return prepayments
+    .filter((p) => p.amount > 0 && p.month <= product.prepaymentBanMonths)
+    .map((p) => `Досрочный взнос в ${p.month}-м мес. — банк запрещает досрочное погашение первые ${product.prepaymentBanMonths} мес.`);
 }

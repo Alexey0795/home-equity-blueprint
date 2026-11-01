@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkDealAgainstProduct, productRateSteps, resolveRate, type CreditProduct } from './products';
+import { checkDealAgainstProduct, prepaymentBanProblems, productRateSteps, resolveRate, type CreditProduct } from './products';
 
 const product = (patch: Partial<CreditProduct> = {}): CreditProduct => ({
   id: 'p',
@@ -60,5 +60,19 @@ describe('checkDealAgainstProduct', () => {
   it('лимит не указан — сумма не проверяется', () => {
     expect(checkDealAgainstProduct(product({ maxLoan: null }), { ...ok, price: 10_000_000, downPayment: 1_000_000 }))
       .toEqual([]);
+  });
+});
+
+describe('prepaymentBanProblems', () => {
+  it('запрет 60 мес.: взнос в 60-м — нарушение, в 61-м — можно', () => {
+    const problems = prepaymentBanProblems(product(), [
+      { month: 60, amount: 10_000, mode: 'reduceTerm' },
+      { month: 61, amount: 10_000, mode: 'reduceTerm' },
+    ]);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('60-м мес.');
+  });
+  it('без запрета — без замечаний', () => {
+    expect(prepaymentBanProblems(product({ prepaymentBanMonths: 0 }), [{ month: 1, amount: 1, mode: 'reduceTerm' }])).toEqual([]);
   });
 });

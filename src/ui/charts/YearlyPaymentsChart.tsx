@@ -15,6 +15,9 @@ export function YearlyPaymentsChart({ years }: { years: YearTotals[] }) {
         <Legend />
         <Bar dataKey="interest" name="Проценты" stackId="pay" fill={COLORS.interest} isAnimationActive={false} />
         <Bar dataKey="principal" name="Основной долг" stackId="pay" fill={COLORS.principal} isAnimationActive={false} />
+        {years.some((y) => y.prepayment > 0) && (
+          <Bar dataKey="prepayment" name="Досрочно" stackId="pay" fill={COLORS.prepayment} isAnimationActive={false} />
+        )}
       </BarChart>
     </ResponsiveContainer>
   );

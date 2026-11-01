@@ -5,6 +5,8 @@ import {
   loanAmount,
   maxPayment,
   paymentPhases,
+  prepaymentBanProblems,
+  prepaymentEffect,
   solveDeal,
   summarizeSavings,
   yearlyTotals,
@@ -23,12 +25,15 @@ import { DataFileButtons } from './ui/DataFileButtons';
 import { formatMoney, formatTerm } from './ui/format';
 import { FREE_VARIABLE_HINTS, FreeVariablePicker } from './ui/FreeVariablePicker';
 import { NumberField } from './ui/NumberField';
+import { PrepaymentsSection } from './ui/PrepaymentsSection';
 import { ProductsSection } from './ui/ProductsSection';
 import { SavingsSection } from './ui/SavingsSection';
 import { ScheduleTable } from './ui/ScheduleTable';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const round2 = (n: number) => Math.round(n * 100) / 100;
+/** Сколько отрезков платежа показывать в итогах; остальное — в таблице. */
+const MAX_PHASES = 4;
 
 export function App() {
   const [state, setState] = useAppState();
@@ -75,13 +80,21 @@ export function App() {
       downPayment: scenario.downPayment,
       termMonths: scenario.termMonths,
       targetPayment: scenario.targetPayment,
+      prepayments: scenario.prepayments,
       rate: product
         ? { kind: 'product', product, refinancingRatePct: state.refinancingRatePct }
         : { kind: 'manual', annualRatePct: scenario.annualRatePct },
     };
     try {
-      const { deal, schedule } = solveDeal(free, input);
-      return { deal, schedule, phases: paymentPhases(schedule), years: yearlyTotals(schedule) };
+      const { deal, schedule, baseline } = solveDeal(free, input);
+      return {
+        deal,
+        schedule,
+        baseline,
+        effect: prepaymentEffect(baseline, schedule),
+        phases: paymentPhases(schedule),
+        years: yearlyTotals(schedule),
+      };
     } catch (e) {
       return { error: errorText(e) };
     }
@@ -108,7 +121,7 @@ export function App() {
       patch.termMonths = result.deal.termMonths;
       if (result.deal.rate.kind === 'manual') patch.annualRatePct = Math.round(result.deal.rate.annualRatePct * 1000) / 1000;
       // Округляем вверх: иначе желаемый платёж окажется на доли копейки меньше текущего и срок «прыгнет» на месяц.
-      if (free === 'payment') patch.targetPayment = Math.ceil(maxPayment(result.schedule) * 100) / 100;
+      if (free === 'payment') patch.targetPayment = Math.ceil(maxPayment(result.baseline) * 100) / 100;
     }
     update(patch);
   }
@@ -221,6 +234,14 @@ export function App() {
         <p className="hint">Данные сохраняются в этом браузере автоматически. Чтобы перенести их или сделать копию — «Скачать JSON».</p>
       </section>
 
+      <PrepaymentsSection
+        prepayments={scenario.prepayments}
+        currency={currency}
+        effect={'error' in result ? null : result.effect}
+        problems={product ? prepaymentBanProblems(product, scenario.prepayments) : []}
+        onChange={(prepayments) => update({ prepayments })}
+      />
+
       <SavingsSection
         accounts={state.accounts}
         fxRates={state.fxRates}
@@ -257,23 +278,30 @@ export function App() {
                 <strong>{formatMoney(result.schedule.monthlyPayment, currency)}</strong>
               ) : (
                 <ul className="phases">
-                  {result.phases.map((ph) => (
+                  {result.phases.slice(0, MAX_PHASES).map((ph) => (
                     <li key={ph.fromMonth}>
                       <strong>{formatMoney(ph.payment, currency)}</strong>
                       <span>{ph.fromMonth === ph.toMonth ? `мес. ${ph.fromMonth}` : `мес. ${ph.fromMonth}–${ph.toMonth}`}</span>
                     </li>
                   ))}
+                  {result.phases.length > MAX_PHASES && (
+                    <li><span>и ещё {result.phases.length - MAX_PHASES} изм. — см. таблицу</span></li>
+                  )}
                 </ul>
               )}
             </div>
+            {result.effect.monthsSaved > 0 && (
+              <div><span>Кредит закроется через</span><strong>{formatTerm(result.schedule.rows.length)}</strong></div>
+            )}
             <div><span>Переплата по процентам</span><strong className="interest">{formatMoney(result.schedule.totalInterest, currency)}</strong></div>
             <div><span>Всего выплат</span><strong>{formatMoney(result.schedule.totalPaid, currency)}</strong></div>
           </section>
 
           <section className="card">
             <h2>Гора переплаты</h2>
-            <p className="hint">Сколько процентов банку выплачено к каждому месяцу. При аннуитете в первые годы большая часть платежа уходит на проценты — поэтому гора круче в начале. Льготная ставка в начале делает подножие горы пологим.</p>
-            <OverpaymentChart schedule={result.schedule} />
+            <p className="hint">Сколько процентов банку выплачено к каждому месяцу. При аннуитете в первые годы большая часть платежа уходит на проценты — поэтому гора круче в начале. Льготная ставка в начале делает подножие горы пологим.{scenario.prepayments.length > 0 && ' Пунктир — та же гора без досрочных взносов.'}</p>
+            <OverpaymentChart schedule={result.schedule}
+              baseline={scenario.prepayments.length > 0 ? result.baseline : undefined} />
           </section>
 
           <section className="card">

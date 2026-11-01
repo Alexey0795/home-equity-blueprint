@@ -1,6 +1,6 @@
 import { buildSchedule } from './annuity';
 import { productRateSteps, type CreditProduct } from './products';
-import type { PaymentSchedule, RateStep } from './types';
+import type { PaymentSchedule, PrepaymentPlan, RateStep } from './types';
 
 /**
  * Режим «зафиксировать всё, кроме одного»: одна величина свободна, остальные заданы, свободная вычисляется.
@@ -12,6 +12,9 @@ import type { PaymentSchedule, RateStep } from './types';
  *
  * «Желаемый платёж» сравнивается с МАКСИМАЛЬНЫМ платежом графика: у льготных программ платёж растёт,
  * и важно, потянешь ли самый большой.
+ *
+ * Свободная величина подбирается по договору БЕЗ досрочных взносов (досрочка — твоё решение, а не условие
+ * банка, и в формулу «платёж пропорционален сумме кредита» она не вписывается). Итоговый график — уже с досрочкой.
  */
 export const FREE_VARIABLES = ['payment', 'downPayment', 'price', 'term', 'rate'] as const;
 export type FreeVariable = (typeof FREE_VARIABLES)[number];
@@ -27,12 +30,16 @@ export interface DealInput {
   rate: RateSource;
   /** Желаемый (максимальный) ежемесячный платёж — вход для всех режимов, кроме payment. */
   targetPayment: number;
+  prepayments?: PrepaymentPlan[];
 }
 
 export interface Solution {
   /** Входные данные, где свободная величина заменена вычисленной. */
   deal: DealInput;
+  /** График с досрочными взносами. */
   schedule: PaymentSchedule;
+  /** График по договору, без досрочных взносов — для сравнения. */
+  baseline: PaymentSchedule;
 }
 
 /** Самый большой платёж графика. */
@@ -53,6 +60,7 @@ export function scheduleForDeal(deal: DealInput, principal = Math.max(0, deal.pr
     termMonths: deal.termMonths,
     rateSteps: rateSteps(deal.rate),
     interestOnlyMonths: deal.rate.kind === 'product' ? deal.rate.product.interestOnlyMonths : 0,
+    prepayments: deal.prepayments,
   });
 }
 
@@ -112,7 +120,8 @@ function solveRate(deal: DealInput): DealInput {
 }
 
 /** Вычисляет свободную величину. Бросает RangeError с понятным текстом, если сделка не сходится. */
-export function solveDeal(free: FreeVariable, deal: DealInput): Solution {
+export function solveDeal(free: FreeVariable, input: DealInput): Solution {
+  const deal: DealInput = { ...input, prepayments: [] };
   let solved: DealInput;
   switch (free) {
     case 'payment':
@@ -140,5 +149,6 @@ export function solveDeal(free: FreeVariable, deal: DealInput): Solution {
       solved = solveRate(deal);
       break;
   }
-  return { deal: solved, schedule: scheduleForDeal(solved) };
+  const withPrepayments = { ...solved, prepayments: input.prepayments ?? [] };
+  return { deal: withPrepayments, schedule: scheduleForDeal(withPrepayments), baseline: scheduleForDeal(solved) };
 }

@@ -1,4 +1,12 @@
-import type { LoanParams, PaymentPhase, PaymentSchedule, RateStep, ScheduleRow, VariableLoanParams } from './types';
+import type {
+  LoanParams,
+  PaymentPhase,
+  PaymentSchedule,
+  PrepaymentPlan,
+  RateStep,
+  ScheduleRow,
+  VariableLoanParams,
+} from './types';
 
 /** Месячная ставка как доля: 12% годовых -> 0.01. */
 export function monthlyRate(annualRatePct: number): number {
@@ -60,31 +68,59 @@ export function rateForMonth(steps: RateStep[], month: number): number {
   return rate;
 }
 
+function validatePrepayments(prepayments: PrepaymentPlan[]): void {
+  for (const p of prepayments) {
+    if (!Number.isInteger(p.month) || p.month < 1) {
+      throw new RangeError('Месяц досрочного взноса должен быть целым числом >= 1');
+    }
+    if (!Number.isFinite(p.amount) || p.amount < 0) {
+      throw new RangeError(`Досрочный взнос в месяце ${p.month}: сумма должна быть неотрицательным числом`);
+    }
+  }
+}
+
+/** Сколько месяцев нужно, чтобы погасить balance платежом payment при месячной ставке r (вверх до целого). */
+function monthsToRepay(balance: number, r: number, payment: number): number {
+  if (r === 0) return Math.ceil(balance / payment - 1e-9);
+  return Math.ceil(-Math.log(1 - (balance * r) / payment) / Math.log(1 + r) - 1e-9);
+}
+
+/** Остаток меньше этого (доли копейки из-за float) считаем погашенным. */
+const PAID_OFF = 1e-6;
+
 /**
- * Аннуитетный график, в котором ставка меняется по периодам и первые месяцы могут быть «только проценты».
- * Когда меняется ставка или заканчивается период «только проценты», платёж пересчитывается
- * на остаток долга и оставшийся срок — так обычно делают банки.
+ * Аннуитетный график, в котором ставка меняется по периодам, первые месяцы могут быть «только проценты»,
+ * а в отдельные месяцы вносятся досрочные взносы.
+ *
+ * Платёж пересчитывается на остаток долга и оставшийся срок, когда меняется ставка, заканчивается период
+ * «только проценты» или был досрочный взнос с режимом «уменьшить платёж». После взноса «сократить срок»
+ * платёж остаётся прежним, а плановый последний месяц переносится ближе — и дальнейшие пересчёты
+ * (например, при смене ставки) идут уже на сокращённый срок.
  */
 export function buildSchedule(params: VariableLoanParams): PaymentSchedule {
-  const { principal, termMonths, rateSteps, interestOnlyMonths } = params;
+  const { principal, termMonths, rateSteps, interestOnlyMonths, prepayments = [] } = params;
   validatePrincipalAndTerm(principal, termMonths);
   validateSteps(rateSteps);
   if (!Number.isInteger(interestOnlyMonths) || interestOnlyMonths < 0 || interestOnlyMonths >= termMonths) {
     throw new RangeError('Период «только проценты» должен быть целым числом месяцев, меньше срока кредита');
   }
+  validatePrepayments(prepayments);
 
   const rows: ScheduleRow[] = [];
   let balance = principal;
   let totalInterest = 0;
   let payment = 0;
   let prevRate = Number.NaN;
+  /** Плановый последний месяц: сдвигается раньше после взносов «сократить срок». */
+  let endMonth = termMonths;
+  let recalc = false;
 
-  for (let month = 1; month <= termMonths; month++) {
+  for (let month = 1; month <= endMonth; month++) {
     const annualRatePct = rateForMonth(rateSteps, month);
     const r = monthlyRate(annualRatePct);
     const interest = balance * r;
     const interestOnly = month <= interestOnlyMonths;
-    const isLast = month === termMonths;
+    const isLast = month === endMonth;
 
     let principalPart: number;
     if (interestOnly) {
@@ -94,14 +130,32 @@ export function buildSchedule(params: VariableLoanParams): PaymentSchedule {
       principalPart = balance;
     } else {
       const amortizationStarts = month === interestOnlyMonths + 1;
-      if (amortizationStarts || annualRatePct !== prevRate) {
-        payment = levelPayment(balance, r, termMonths - month + 1);
+      if (amortizationStarts || annualRatePct !== prevRate || recalc) {
+        payment = levelPayment(balance, r, endMonth - month + 1);
+        recalc = false;
       }
-      principalPart = payment - interest;
+      // После «сократить срок» в предпоследний месяц платёж может оказаться больше остатка.
+      principalPart = Math.min(payment - interest, balance);
     }
     prevRate = annualRatePct;
+    balance -= principalPart;
 
-    balance = isLast ? 0 : balance - principalPart;
+    let prepayment = 0;
+    for (const plan of prepayments) {
+      if (plan.month !== month || balance <= PAID_OFF) continue;
+      const amount = Math.min(plan.amount, balance);
+      balance -= amount;
+      prepayment += amount;
+      if (balance <= PAID_OFF) break;
+      if (plan.mode === 'reducePayment' || interestOnly) {
+        // В период «только проценты» сокращать нечего — взнос уменьшит платёж, когда начнётся погашение.
+        recalc = !interestOnly;
+      } else {
+        endMonth = Math.min(endMonth, month + monthsToRepay(balance, r, payment));
+      }
+    }
+
+    if (balance <= PAID_OFF) balance = 0;
     totalInterest += interest;
     rows.push({
       month,
@@ -110,7 +164,9 @@ export function buildSchedule(params: VariableLoanParams): PaymentSchedule {
       principal: principalPart,
       balance,
       cumulativeInterest: totalInterest,
+      prepayment,
     });
+    if (balance === 0) break;
   }
 
   return {
@@ -146,4 +202,19 @@ export function paymentPhases(schedule: PaymentSchedule): PaymentPhase[] {
     }
   }
   return phases;
+}
+
+export interface PrepaymentEffect {
+  /** Насколько меньше переплата по процентам. */
+  interestSaved: number;
+  /** На сколько месяцев раньше закрыт кредит. */
+  monthsSaved: number;
+}
+
+/** Сравнение графика с досрочными взносами и без них. */
+export function prepaymentEffect(without: PaymentSchedule, withPrepayments: PaymentSchedule): PrepaymentEffect {
+  return {
+    interestSaved: without.totalInterest - withPrepayments.totalInterest,
+    monthsSaved: without.rows.length - withPrepayments.rows.length,
+  };
 }

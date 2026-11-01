@@ -7,12 +7,13 @@ export function yearlyTotals(schedule: PaymentSchedule): YearTotals[] {
     const year = Math.ceil(row.month / 12);
     let current = years[year - 1];
     if (!current) {
-      current = { year, payment: 0, interest: 0, principal: 0, balance: 0 };
+      current = { year, payment: 0, interest: 0, principal: 0, prepayment: 0, balance: 0 };
       years.push(current);
     }
     current.payment += row.payment;
     current.interest += row.interest;
     current.principal += row.principal;
+    current.prepayment += row.prepayment;
     current.balance = row.balance;
   }
   return years;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAnnuitySchedule } from './annuity';
+import { buildAnnuitySchedule, buildSchedule } from './annuity';
 import { yearlyTotals } from './aggregate';
 
 const kopecks = (n: number) => Math.round(n * 100) / 100;
@@ -45,5 +45,17 @@ describe('yearlyTotals', () => {
     // В аннуитете проценты по годам убывают, тело долга растёт.
     expect(years[0]!.interest).toBeGreaterThan(years[19]!.interest);
     expect(years[0]!.principal).toBeLessThan(years[19]!.principal);
+  });
+});
+
+describe('yearlyTotals и досрочка', () => {
+  it('досрочные взносы суммируются по годам отдельно от планового тела долга', () => {
+    const s = buildSchedule({
+      principal: 120_000, termMonths: 24, rateSteps: [{ fromMonth: 1, annualRatePct: 0 }], interestOnlyMonths: 0,
+      prepayments: [{ month: 3, amount: 10_000, mode: 'reduceTerm' }, { month: 13, amount: 5_000, mode: 'reduceTerm' }],
+    });
+    const years = yearlyTotals(s);
+    expect(years.map((y) => y.prepayment)).toEqual([10_000, 5_000]);
+    expect(years.reduce((sum, y) => sum + y.principal + y.prepayment, 0)).toBeCloseTo(120_000, 6);
   });
 });

@@ -5,6 +5,7 @@ import {
   DEFAULT_FX_RATES,
   defaultState,
   newAccount,
+  newPrepayment,
   parseState,
   serializeState,
   type AppState,
@@ -68,10 +69,11 @@ describe('миграция с версии 1', () => {
 
   it('сценарии сохраняются, валюта — BYN, счетов нет, курсы по умолчанию, ставка ручная', () => {
     const state = parseState(v1);
-    expect(state.version).toBe(4);
+    expect(state.version).toBe(5);
     expect(state.scenarios[0]).toEqual({
       id: 's1', name: 'Старый', currency: 'BYN', price: 300_000, downPayment: 60_000,
       productId: null, annualRatePct: 12, termMonths: 240, freeVariable: 'payment', targetPayment: 3_000,
+      prepayments: [],
     });
     expect(state.products.length).toBeGreaterThan(0);
     expect(state.refinancingRatePct).toBe(9.25);
@@ -106,5 +108,18 @@ describe('версия 4: режим «зафиксировать всё, кро
     const raw = JSON.parse(serializeState(defaultState()));
     raw.scenarios[0].freeVariable = 'inflation';
     expect(() => parseState(JSON.stringify(raw))).toThrow('«inflation»');
+  });
+});
+
+describe('версия 5: досрочные взносы', () => {
+  it('переживают сохранение', () => {
+    const state = defaultState();
+    state.scenarios[0]!.prepayments = [{ ...newPrepayment(24), amount: 50_000, mode: 'reducePayment' }];
+    expect(parseState(serializeState(state))).toEqual(state);
+  });
+  it('неизвестный режим → понятная ошибка', () => {
+    const raw = JSON.parse(serializeState(defaultState()));
+    raw.scenarios[0].prepayments = [{ id: 'x', month: 1, amount: 1, mode: 'magic' }];
+    expect(() => parseState(JSON.stringify(raw))).toThrow('«magic»');
   });
 });

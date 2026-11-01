@@ -9,6 +9,7 @@
  * 2 — счета, ручные курсы, валюта сделки в сценарии.
  * 3 — карточки банков, ставка рефинансирования, выбор карточки в сценарии.
  * 4 — режим «зафиксировать всё, кроме одного»: свободная величина и желаемый платёж в сценарии.
+ * 5 — досрочные взносы в сценарии.
  */
 
 import {
@@ -19,11 +20,12 @@ import {
   type Currency,
   type FreeVariable,
   type FxRates,
+  type PrepaymentPlan,
   type RatePeriod,
 } from '../domain';
 import { sampleProducts } from './sampleProducts';
 
-export const STATE_VERSION = 4;
+export const STATE_VERSION = 5;
 
 export interface Scenario {
   id: string;
@@ -42,6 +44,12 @@ export interface Scenario {
   freeVariable: FreeVariable;
   /** Желаемый (максимальный) ежемесячный платёж — используется, когда свободен не платёж. */
   targetPayment: number;
+  /** Досрочные взносы этого сценария. */
+  prepayments: Prepayment[];
+}
+
+export interface Prepayment extends PrepaymentPlan {
+  id: string;
 }
 
 export interface AppState {
@@ -79,11 +87,16 @@ export function defaultScenario(): Scenario {
     termMonths: 240,
     freeVariable: 'payment',
     targetPayment: DEFAULT_TARGET_PAYMENT,
+    prepayments: [],
   };
 }
 
 export function newAccount(): Account {
   return { id: newId(), name: '', currency: 'BYN', amount: 0, useForDownPayment: true };
+}
+
+export function newPrepayment(month: number): Prepayment {
+  return { id: newId(), month, amount: 10_000, mode: 'reduceTerm' };
 }
 
 export function newProduct(): CreditProduct {
@@ -172,7 +185,20 @@ function parseScenario(raw: unknown, index: number, version: number): Scenario {
     // До версии 4 решателя не было — платёж вычислялся, остальное было задано.
     freeVariable: version >= 4 ? readFreeVariable(r, where) : 'payment',
     targetPayment: version >= 4 ? readNumber(r, 'targetPayment', where) : DEFAULT_TARGET_PAYMENT,
+    prepayments: version >= 5 ? readPrepayments(r, where) : [],
   };
+}
+
+function readPrepayments(raw: Raw, where: string): Prepayment[] {
+  if (!Array.isArray(raw.prepayments)) throw new RangeError(`${where}: нет списка досрочных взносов («prepayments»)`);
+  const items = raw.prepayments.map((item, i): Prepayment => {
+    const w = `${where}, досрочный взнос №${i + 1}`;
+    const r = asObject(item, w);
+    if (r.mode !== 'reduceTerm' && r.mode !== 'reducePayment') throw new RangeError(`${w}: неизвестный режим «${String(r.mode)}»`);
+    return { id: readId(r, w), month: readNumber(r, 'month', w), amount: readNumber(r, 'amount', w), mode: r.mode };
+  });
+  uniqueIds(items, 'досрочных взносов');
+  return items;
 }
 
 function readFreeVariable(raw: Raw, where: string): FreeVariable {

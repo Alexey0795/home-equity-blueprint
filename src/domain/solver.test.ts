@@ -96,3 +96,13 @@ describe('rate — при какой ставке сходится', () => {
     expect(() => solveDeal('rate', manual({ targetPayment: 50_000 }))).toThrow('даже при ставке 0%');
   });
 });
+
+describe('решатель и досрочка', () => {
+  it('взнос подбирается по договору без досрочки, а итоговый график — с ней', () => {
+    const prepayments = [{ month: 1, amount: 300_000, mode: 'reduceTerm' as const }];
+    const { deal, schedule, baseline } = solveDeal('downPayment', manual({ downPayment: 0, prepayments }));
+    expect(kopecks(deal.downPayment)).toBe(500_000);
+    expect(baseline.rows).toHaveLength(12);
+    expect(schedule.rows).toHaveLength(9);
+  });
+});
