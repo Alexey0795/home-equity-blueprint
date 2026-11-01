@@ -9,8 +9,8 @@ todos:
     content: "Домен: типы, аннуитетный график, суммы процентов/тела, проверка цифрами"
     status: done
   - id: ui-deal-chart
-    content: Экран сделки + таблица графика + диаграмма проценты/долг
-    status: pending
+    content: "Экран сделки + таблица графика (готово) + диаграмма проценты/долг + localStorage + экспорт JSON"
+    status: in_progress
   - id: savings-fx
     content: Счета, ручные курсы, gap до первого взноса
     status: pending
