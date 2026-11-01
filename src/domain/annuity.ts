@@ -51,6 +51,7 @@ export function buildAnnuitySchedule(params: LoanParams): PaymentSchedule {
       interest,
       principal: principalPart,
       balance,
+      cumulativeInterest: totalInterest,
     });
   }
 

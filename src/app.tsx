@@ -1,37 +1,62 @@
-import { useMemo, useState } from 'react';
-import { buildAnnuitySchedule, loanAmount, type PaymentSchedule } from './domain';
+import { useMemo } from 'react';
+import { buildAnnuitySchedule, loanAmount, yearlyTotals } from './domain';
+import { activeScenario, type Scenario } from './state/appState';
+import { useAppState } from './state/useAppState';
+import { OverpaymentChart } from './ui/charts/OverpaymentChart';
+import { YearlyPaymentsChart } from './ui/charts/YearlyPaymentsChart';
+import { DataFileButtons } from './ui/DataFileButtons';
 import { formatMoney } from './ui/format';
 import { NumberField } from './ui/NumberField';
 import { ScheduleTable } from './ui/ScheduleTable';
 
 export function App() {
-  const [price, setPrice] = useState(10_000_000);
-  const [downPayment, setDownPayment] = useState(2_000_000);
-  const [annualRatePct, setAnnualRatePct] = useState(12);
-  const [termYears, setTermYears] = useState(20);
+  const [state, setState] = useAppState();
+  const scenario = activeScenario(state);
 
-  const loan = loanAmount(price, downPayment);
+  function update(patch: Partial<Scenario>) {
+    setState((s) => ({
+      ...s,
+      scenarios: s.scenarios.map((sc) => (sc.id === scenario.id ? { ...sc, ...patch } : sc)),
+    }));
+  }
 
-  const result = useMemo((): { schedule: PaymentSchedule } | { error: string } => {
+  const loan = loanAmount(scenario.price, scenario.downPayment);
+
+  const result = useMemo(() => {
     try {
-      return { schedule: buildAnnuitySchedule({ principal: loan, annualRatePct, termMonths: Math.round(termYears * 12) }) };
+      const schedule = buildAnnuitySchedule({
+        principal: loan,
+        annualRatePct: scenario.annualRatePct,
+        termMonths: scenario.termMonths,
+      });
+      return { schedule, years: yearlyTotals(schedule) };
     } catch (e) {
       return { error: e instanceof Error ? e.message : String(e) };
     }
-  }, [loan, annualRatePct, termYears]);
+  }, [loan, scenario.annualRatePct, scenario.termMonths]);
 
   return (
     <main>
-      <h1>Ипотечный калькулятор</h1>
+      <header className="top">
+        <h1>Ипотечный калькулятор</h1>
+        <DataFileButtons state={state} onImport={setState} />
+      </header>
 
       <section className="card">
-        <h2>Сделка</h2>
+        <label className="field scenario-name">
+          <span>Сценарий</span>
+          <input type="text" value={scenario.name} onChange={(e) => update({ name: e.target.value })} />
+        </label>
         <div className="fields">
-          <NumberField label="Цена квартиры" value={price} onChange={setPrice} step={100_000} />
-          <NumberField label="Первый взнос" value={downPayment} onChange={setDownPayment} step={100_000} />
-          <NumberField label="Ставка, % годовых" value={annualRatePct} onChange={setAnnualRatePct} step={0.1} />
-          <NumberField label="Срок, лет" value={termYears} onChange={setTermYears} min={1} />
+          <NumberField label="Цена квартиры" value={scenario.price} onChange={(price) => update({ price })} step={1000} />
+          <NumberField label="Первый взнос" value={scenario.downPayment}
+            onChange={(downPayment) => update({ downPayment })} step={1000} />
+          <NumberField label="Ставка, % годовых" value={scenario.annualRatePct}
+            onChange={(annualRatePct) => update({ annualRatePct })} step={0.1} />
+          <NumberField label="Срок, лет" value={scenario.termMonths / 12} step={0.5} min={0.5}
+            onChange={(years) => update({ termMonths: Math.round(years * 12) })} />
         </div>
+        <p className="hint">Данные сохраняются в этом браузере автоматически. Чтобы перенести их или сделать копию — «Скачать JSON».</p>
       </section>
 
       {'error' in result ? (
@@ -41,12 +66,23 @@ export function App() {
           <section className="card summary">
             <div><span>Сумма кредита</span><strong>{formatMoney(loan)}</strong></div>
             <div><span>Ежемесячный платёж</span><strong>{formatMoney(result.schedule.monthlyPayment)}</strong></div>
-            <div><span>Переплата по процентам</span><strong>{formatMoney(result.schedule.totalInterest)}</strong></div>
+            <div><span>Переплата по процентам</span><strong className="interest">{formatMoney(result.schedule.totalInterest)}</strong></div>
             <div><span>Всего выплат</span><strong>{formatMoney(result.schedule.totalPaid)}</strong></div>
           </section>
 
           <section className="card">
-            <h2>График платежей</h2>
+            <h2>Гора переплаты</h2>
+            <p className="hint">Сколько процентов банку выплачено к каждому месяцу. Платёж одинаковый весь срок (аннуитет), но в первые годы почти весь он уходит на проценты — поэтому гора круче в начале.</p>
+            <OverpaymentChart schedule={result.schedule} />
+          </section>
+
+          <section className="card">
+            <h2>Куда уходят платежи по годам</h2>
+            <YearlyPaymentsChart years={result.years} />
+          </section>
+
+          <section className="card">
+            <h2>График платежей по месяцам</h2>
             <ScheduleTable schedule={result.schedule} />
           </section>
         </>

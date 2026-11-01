@@ -16,6 +16,18 @@ export interface ScheduleRow {
   principal: number;
   /** Остаток долга после этого платежа. */
   balance: number;
+  /** Проценты, выплаченные с 1-го месяца по этот включительно («гора переплаты»). */
+  cumulativeInterest: number;
+}
+
+/** Суммы за год кредита: год 1 = месяцы 1–12 и т. д. */
+export interface YearTotals {
+  year: number;
+  payment: number;
+  interest: number;
+  principal: number;
+  /** Остаток долга на конец года. */
+  balance: number;
 }
 
 export interface PaymentSchedule {

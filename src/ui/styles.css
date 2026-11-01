@@ -27,3 +27,14 @@ th, td { padding: 4px 8px; text-align: right; border-bottom: 1px solid #eceef1; 
 th { position: sticky; top: 0; background: #fff; }
 
 .error { color: #b42318; }
+
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.top h1 { margin: 0; }
+.data-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+button { padding: 6px 12px; font-size: 0.95rem; border: 1px solid #c8ccd1; border-radius: 4px; background: #fff; cursor: pointer; }
+button:hover { background: #f1f3f5; }
+
+.scenario-name { max-width: 360px; margin-bottom: 12px; }
+.hint { margin: 8px 0 0; font-size: 0.85rem; color: #59636e; }
+.card h2 + .hint { margin: -4px 0 12px; }
+.summary .interest { color: #e8590c; }
