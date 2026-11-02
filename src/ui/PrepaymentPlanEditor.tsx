@@ -1,10 +1,13 @@
-import type { PrepaymentMode } from '../domain';
+import { paymentDate, type CalendarDate, type PrepaymentMode } from '../domain';
 import { newPrepayment, newRecurring, type Prepayment, type PrepaymentPlanComponent, type Recurring } from '../state/appState';
+import { formatMonthYear } from './format';
 import { NumberField } from './NumberField';
 
 interface Props {
   plan: PrepaymentPlanComponent;
   onChange: (plan: PrepaymentPlanComponent) => void;
+  /** Дата выдачи текущего сценария — чтобы подписать номера месяцев датами. */
+  issueDate?: CalendarDate;
 }
 
 function ModeSelect({ value, label, onChange }: { value: PrepaymentMode; label: string; onChange: (m: PrepaymentMode) => void }) {
@@ -17,7 +20,10 @@ function ModeSelect({ value, label, onChange }: { value: PrepaymentMode; label: 
 }
 
 /** Разовые и повторяющиеся досрочные взносы плана. Суммы — в валюте плана. */
-export function PrepaymentPlanEditor({ plan, onChange }: Props) {
+export function PrepaymentPlanEditor({ plan, onChange, issueDate }: Props) {
+  /** «≈ март 2028» под номером месяца, если у текущего сценария есть дата выдачи. */
+  const when = (m: number) =>
+    issueDate && Number.isInteger(m) && m >= 1 ? <small className="month-date">{formatMonthYear(paymentDate(issueDate, m))}</small> : null;
   const c = plan.currency;
   const setOneOff = (oneOff: Prepayment[]) => onChange({ ...plan, oneOff });
   const setRecurring = (recurring: Recurring[]) => onChange({ ...plan, recurring });
@@ -36,7 +42,7 @@ export function PrepaymentPlanEditor({ plan, onChange }: Props) {
             {sorted.map((p, i) => (
               <tr key={p.id}>
                 <td><NumberField bare label={`Разовый взнос ${i + 1}: месяц`} value={p.month} min={1}
-                  onChange={(month) => updOne(p.id, { month: Math.round(month) })} /></td>
+                  onChange={(month) => updOne(p.id, { month: Math.round(month) })} />{when(p.month)}</td>
                 <td><NumberField bare label={`Разовый взнос ${i + 1}: сумма`} value={p.amount} step={1000} currency={c}
                   onChange={(amount) => updOne(p.id, { amount })} /></td>
                 <td><ModeSelect label={`Разовый взнос ${i + 1}: что уменьшаем`} value={p.mode} onChange={(mode) => updOne(p.id, { mode })} /></td>
@@ -64,9 +70,9 @@ export function PrepaymentPlanEditor({ plan, onChange }: Props) {
                 <td><NumberField bare label={`Повторяющийся ${i + 1}: сумма`} value={p.amount} step={500} currency={c}
                   onChange={(amount) => updRec(p.id, { amount })} /></td>
                 <td><NumberField bare label={`Повторяющийся ${i + 1}: с месяца`} value={p.fromMonth} min={1}
-                  onChange={(fromMonth) => updRec(p.id, { fromMonth: Math.round(fromMonth) })} /></td>
+                  onChange={(fromMonth) => updRec(p.id, { fromMonth: Math.round(fromMonth) })} />{when(p.fromMonth)}</td>
                 <td><NumberField bare label={`Повторяющийся ${i + 1}: по месяц`} value={p.toMonth} min={1}
-                  onChange={(toMonth) => updRec(p.id, { toMonth: Math.round(toMonth) })} /></td>
+                  onChange={(toMonth) => updRec(p.id, { toMonth: Math.round(toMonth) })} />{when(p.toMonth)}</td>
                 <td><ModeSelect label={`Повторяющийся ${i + 1}: что уменьшаем`} value={p.mode} onChange={(mode) => updRec(p.id, { mode })} /></td>
                 <td><button type="button" className="icon" aria-label={`Удалить повторяющийся взнос ${i + 1}`}
                   onClick={() => setRecurring(plan.recurring.filter((x) => x.id !== p.id))}>✕</button></td>

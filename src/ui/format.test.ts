@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatNumberInput, formatTerm, parseNumberInput, toRoman } from './format';
+import { formatDate, formatMonthYear, formatNumberInput, formatTerm, parseNumberInput, toRoman } from './format';
 
 describe('formatTerm', () => {
   it('годы и месяцы по-русски', () => {
@@ -36,5 +36,13 @@ describe('ввод чисел с разрядами', () => {
   });
   it('туда-обратно без потерь', () => {
     for (const n of [0, 1, 15.4, 92_307.69, 1_000_000]) expect(parseNumberInput(formatNumberInput(n))).toBe(n);
+  });
+});
+
+describe('даты', () => {
+  it('formatDate и formatMonthYear', () => {
+    expect(formatDate({ year: 2027, month: 3, day: 5 })).toBe('05.03.2027');
+    expect(formatMonthYear({ year: 2027, month: 3, day: 5 })).toBe('март 2027');
+    expect(formatMonthYear({ year: 2028, month: 1, day: 31 })).toBe('янв 2028');
   });
 });

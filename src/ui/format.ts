@@ -54,3 +54,15 @@ export function parseNumberInput(text: string): number {
   if (cleaned === '' || cleaned === '-' || !/^-?\d*\.?\d*$/.test(cleaned)) return Number.NaN;
   return Number(cleaned);
 }
+
+const dayFormat = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+const monthYearFormat = new Intl.DateTimeFormat('ru-RU', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+const utc = (d: { year: number; month: number; day: number }) => new Date(Date.UTC(d.year, d.month - 1, d.day));
+
+/** 15.03.2027 */
+export const formatDate = (d: { year: number; month: number; day: number }): string => dayFormat.format(utc(d));
+
+/** «янв. 2028 г.» → «янв 2028» (у коротких месяцев сокращения нет: «март 2027»). */
+export const formatMonthYear = (d: { year: number; month: number; day: number }): string =>
+  monthYearFormat.format(utc(d)).replace('.', '').replace(/\s?г\.?$/, '');

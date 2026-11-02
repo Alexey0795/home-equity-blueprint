@@ -1,9 +1,9 @@
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { convert, maxPayment, type Currency } from '../domain';
+import { convert, maxPayment, paymentDate, type Currency } from '../domain';
 import { MAX_COMPARED, type AppState, type Profile } from '../state/appState';
 import type { ScenarioEvaluation } from '../state/evaluate';
 import { useChartColors } from './charts/colors';
-import { formatCompact, formatMoney, formatTerm, toRoman } from './format';
+import { formatCompact, formatMoney, formatMonthYear, formatTerm, toRoman } from './format';
 import { Money } from './Money';
 
 interface Props {
@@ -26,6 +26,8 @@ interface Row {
   compared: boolean;
   /** null — сценарий не сходится или нет курса для пересчёта. */
   values: { price: number; loan: number; maxPayment: number; interest: number; months: number; cumulative: number[] } | null;
+  /** «янв 2047» — последний платёж, если у сценария есть дата выдачи. */
+  lastPayment?: string;
   note: string;
 }
 
@@ -65,6 +67,7 @@ function buildRows(
           cumulative: r.schedule.rows.map((row) => conv(row.cumulativeInterest)),
         },
         note: from === currency ? '' : `пересчитано из ${from}`,
+        lastPayment: ev.inputs.issueDate ? formatMonthYear(paymentDate(ev.inputs.issueDate, r.schedule.rows.length)) : undefined,
       };
     } catch {
       return { ...base, values: null, note: `нет курса ${from}` };
@@ -151,6 +154,7 @@ export function ComparisonSection({ state, profile, evaluations, currency, onTog
                     </td>
                     <td>
                       {formatTerm(r.values.months)}
+                      {r.lastPayment && <small className="month-date">до {r.lastPayment}</small>}
                       {r.id !== profile.activeScenarioId && <Delta value={r.values.months} base={current?.months} format={(n) => formatTerm(Math.round(n))} />}
                     </td>
                   </>

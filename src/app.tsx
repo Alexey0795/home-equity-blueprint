@@ -5,6 +5,7 @@ import {
   loanAmount,
   maxPayment,
   paymentHeadroom,
+  paymentDate,
   prepaymentBanProblems,
   type DealField,
   type FreeVariable,
@@ -33,7 +34,7 @@ import { ComponentsSection } from './ui/ComponentsSection';
 import { ComputedField } from './ui/ComputedField';
 import { describeProduct, formatPct } from './ui/describeProduct';
 import { DataFileButtons } from './ui/DataFileButtons';
-import { formatTerm, toRoman } from './ui/format';
+import { formatDate, formatMonthYear, formatTerm, toRoman } from './ui/format';
 import { BigMoney, FxContext, Money } from './ui/Money';
 import { FREE_VARIABLE_HINTS, FreeVariablePicker } from './ui/FreeVariablePicker';
 import { NumberField } from './ui/NumberField';
@@ -119,6 +120,10 @@ export function App() {
   /** Запас до «платёж не больше» (< 0 — превышение). */
   const headroom = 'error' in result ? Number.NaN : paymentHeadroom(result.baseline, scenario.targetPayment);
 
+  const issueDate = inputs.issueDate;
+  /** Подпись месяца платежа: «мар 2028», если задана дата выдачи, иначе «мес. 14». */
+  const monthLabel = (m: number) => (issueDate ? formatMonthYear(paymentDate(issueDate, m)) : `мес. ${m}`);
+
   const apartmentShared = sharedNote(scenariosUsing(profile, (s) => s.apartmentId === apartment.id));
   const downValue = scenario.downPayment.kind === 'manual' ? 'manual' : scenario.downPayment.planId;
   const usedProductIds = new Set(state.profiles.flatMap((p) => p.scenarios.flatMap((s) => (s.productId ? [s.productId] : []))));
@@ -167,6 +172,17 @@ export function App() {
             <span>Название сценария</span>
             <input type="text" value={scenario.name} onChange={(e) => update({ name: e.target.value })} />
           </label>
+          <div className="field-with-action issue-date">
+            <label className="field">
+              <span>Дата выдачи кредита</span>
+              <input type="date" value={scenario.issueDate ?? ''} onChange={(e) => update({ issueDate: e.target.value || null })} />
+            </label>
+            {scenario.issueDate ? (
+              <button type="button" className="link" onClick={() => update({ issueDate: null })}>без дат (месяц 1, 2, 3…)</button>
+            ) : (
+              <small className="muted">пусто — платежи «месяц 1, 2, 3…»</small>
+            )}
+          </div>
         </div>
         <FreeVariablePicker value={free} onChange={chooseFree} rateLabel={product ? 'Ставку рефинансирования' : 'Ставку'} />
         <p className="hint">{FREE_VARIABLE_HINTS[free]}</p>
@@ -298,7 +314,13 @@ export function App() {
                   {result.phases.slice(0, MAX_PHASES).map((ph) => (
                     <li key={ph.fromMonth}>
                       <strong><Money value={ph.payment} currency={currency} /></strong>
-                      <span>{ph.fromMonth === ph.toMonth ? `мес. ${ph.fromMonth}` : `мес. ${ph.fromMonth}–${ph.toMonth}`}</span>
+                      <span>
+                        {ph.fromMonth === ph.toMonth
+                          ? monthLabel(ph.fromMonth)
+                          : issueDate
+                            ? `${monthLabel(ph.fromMonth)} – ${monthLabel(ph.toMonth)}`
+                            : `мес. ${ph.fromMonth}–${ph.toMonth}`}
+                      </span>
                     </li>
                   ))}
                   {result.phases.length > MAX_PHASES && (
@@ -316,10 +338,19 @@ export function App() {
             <div><span>Переплата по процентам</span><strong className="interest"><BigMoney value={result.schedule.totalInterest} currency={currency} /></strong></div>
             <div><span>Всего выплат</span><strong><BigMoney value={result.schedule.totalPaid} currency={currency} /></strong></div>
             {inputs.prepayments.length > 0 && (
+              <div><span>Экономия от досрочки</span><strong className="ok"><BigMoney value={result.effect.interestSaved} currency={currency} /></strong></div>
+            )}
+            {issueDate ? (
               <>
-                <div><span>Экономия от досрочки</span><strong className="ok"><BigMoney value={result.effect.interestSaved} currency={currency} /></strong></div>
-                <div><span>Кредит закроется через</span><strong>{formatTerm(result.schedule.rows.length)}</strong></div>
+                <div><span>Первый платёж</span><strong>{formatDate(paymentDate(issueDate, 1))}</strong></div>
+                <div>
+                  <span>Последний платёж</span>
+                  <strong>{formatDate(paymentDate(issueDate, result.schedule.rows.length))}</strong>
+                  {inputs.prepayments.length > 0 && <span className="chip neutral">через {formatTerm(result.schedule.rows.length)}</span>}
+                </div>
               </>
+            ) : inputs.prepayments.length > 0 && (
+              <div><span>Кредит закроется через</span><strong>{formatTerm(result.schedule.rows.length)}</strong></div>
             )}
           </section>
 
@@ -330,7 +361,8 @@ export function App() {
               проценты — поэтому гора круче в начале. Льготная ставка в начале делает подножие горы пологим.
               {inputs.prepayments.length > 0 && ' Пунктир — та же гора без досрочных взносов.'}
             </p>
-            <OverpaymentChart schedule={result.schedule} baseline={inputs.prepayments.length > 0 ? result.baseline : undefined} />
+            <OverpaymentChart schedule={result.schedule} baseline={inputs.prepayments.length > 0 ? result.baseline : undefined}
+              issueDate={issueDate} />
           </section>
         </>
       )}
@@ -348,11 +380,11 @@ export function App() {
         <>
           <section className="card">
             <h2>Куда уходят платежи по годам</h2>
-            <YearlyPaymentsChart years={result.years} />
+            <YearlyPaymentsChart years={result.years} calendar={issueDate !== undefined} />
           </section>
           <section className="card">
             <h2>График платежей по месяцам</h2>
-            <ScheduleTable schedule={result.schedule} currency={currency} />
+            <ScheduleTable schedule={result.schedule} currency={currency} issueDate={issueDate} />
           </section>
         </>
       )}
@@ -361,6 +393,7 @@ export function App() {
         <ComponentsSection
           profile={profile}
           highlightIds={highlightIds}
+          issueDate={issueDate}
           onProfileChange={setProfile}
           onApartmentCurrency={(id, to) => setState((s) => changeApartmentCurrency(s, id, to))}
           onSelectScenario={(index) => {

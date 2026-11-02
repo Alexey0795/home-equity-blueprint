@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Currency } from '../domain';
+import type { CalendarDate, Currency } from '../domain';
 import {
   componentInUse,
   copyComponent,
@@ -19,6 +19,8 @@ import { PrepaymentPlanEditor } from './PrepaymentPlanEditor';
 
 interface Props {
   profile: Profile;
+  /** Дата выдачи текущего сценария — подписывать месяцы досрочки датами. */
+  issueDate?: CalendarDate;
   /** Открыть сразу этот компонент (выбранный в текущем сценарии). */
   highlightIds: Set<string>;
   onProfileChange: (patch: (p: Profile) => Profile) => void;
@@ -78,7 +80,7 @@ function ComponentCard({ title, used, highlighted, canDelete, onCopy, onDelete, 
  * Компоненты профиля: квартиры, распределения сбережений, планы досрочки.
  * Они общие: правка меняет все сценарии, где компонент выбран.
  */
-export function ComponentsSection({ profile, highlightIds, onProfileChange, onApartmentCurrency, onSelectScenario }: Props) {
+export function ComponentsSection({ profile, highlightIds, onProfileChange, onApartmentCurrency, onSelectScenario, issueDate }: Props) {
   function updateItem<K extends ListKey>(list: K, id: string, patch: Partial<Profile[K][number]>) {
     onProfileChange((p) => ({ ...p, [list]: (p[list] as { id: string }[]).map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
   }
@@ -155,7 +157,7 @@ export function ComponentsSection({ profile, highlightIds, onProfileChange, onAp
                 <CurrencySelect label={`Валюта плана: ${pp.name}`} value={pp.currency}
                   onChange={(currency) => updateItem('prepaymentPlans', pp.id, { currency })} /></label>
             </div>
-            <PrepaymentPlanEditor plan={pp} onChange={(next) => updateItem('prepaymentPlans', pp.id, next)} />
+            <PrepaymentPlanEditor plan={pp} issueDate={issueDate} onChange={(next) => updateItem('prepaymentPlans', pp.id, next)} />
           </ComponentCard>
         ))}
       </div>

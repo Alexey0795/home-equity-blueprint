@@ -80,7 +80,7 @@ describe('миграция старых версий в профиль «Я»', 
       activeScenarioId: 's1',
       scenarios: [{ id: 's1', name: 'Старый', price: 300_000, downPayment: 60_000, annualRatePct: 12, termMonths: 240 }],
     }));
-    expect(state.version).toBe(7);
+    expect(state.version).toBe(8);
     const profile = activeProfile(state);
     expect(profile.name).toBe('Я');
     expect(profile.apartments).toEqual([expect.objectContaining({ currency: 'BYN', price: 300_000 })]);
@@ -198,5 +198,22 @@ describe('changeApartmentCurrency', () => {
     expect(p.apartments[0]).toMatchObject({ currency: 'USD', price: 92_307.69 });
     expect(p.scenarios[0]!.downPayment).toEqual({ kind: 'manual', amount: 18_461.54 });
     expect(p.scenarios[0]!.targetPayment).toBe(1_000);
+  });
+});
+
+describe('версия 8: дата выдачи кредита', () => {
+  it('данные v7 открываются без даты; дата переживает сохранение; битая дата → без даты', () => {
+    const raw = JSON.parse(serializeState(defaultState()));
+    raw.version = 7;
+    delete raw.profiles[0].scenarios[0].issueDate;
+    expect(activeScenario(activeProfile(parseState(JSON.stringify(raw)))).issueDate).toBeNull();
+
+    const state = defaultState();
+    activeProfile(state).scenarios[0]!.issueDate = '2027-01-31';
+    expect(activeScenario(activeProfile(roundTrip(state))).issueDate).toBe('2027-01-31');
+
+    raw.version = 8;
+    raw.profiles[0].scenarios[0].issueDate = '2027-02-30';
+    expect(activeScenario(activeProfile(parseState(JSON.stringify(raw)))).issueDate).toBeNull();
   });
 });

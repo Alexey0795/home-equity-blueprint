@@ -69,3 +69,21 @@ describe('evaluateScenario', () => {
     expect('error' in result && result.error).toContain('Не сходится');
   });
 });
+
+describe('evaluateScenario с датой выдачи', () => {
+  it('выдача 15.10.2027 на 20 лет: по годам — календарные годы 2027…2047, без даты — 1…20', () => {
+    const { state, profile } = setup((p) => {
+      p.scenarios[0]!.issueDate = '2027-10-15';
+    });
+    const withDate = evaluateScenario(state, profile, profile.scenarios[0]!);
+    if ('error' in withDate.result) throw new Error(withDate.result.error);
+    expect(withDate.inputs.issueDate).toEqual({ year: 2027, month: 10, day: 15 });
+    const years = withDate.result.years.map((y) => y.year);
+    expect(years[0]).toBe(2027);
+    expect(years.at(-1)).toBe(2047);
+
+    const plain = evaluateScenario(state, profile, { ...profile.scenarios[0]!, issueDate: null });
+    if ('error' in plain.result) throw new Error(plain.result.error);
+    expect(plain.result.years.map((y) => y.year)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+  });
+});

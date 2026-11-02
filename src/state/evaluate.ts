@@ -1,4 +1,5 @@
 import {
+  calendarYearTotals,
   convert,
   downPaymentFromSavings,
   expandPrepayments,
@@ -7,6 +8,8 @@ import {
   solveDeal,
   summarizeSavings,
   yearlyTotals,
+  parseIsoDate,
+  type CalendarDate,
   type CreditProduct,
   type Currency,
   type DealInput,
@@ -53,6 +56,8 @@ export interface ScenarioInputs {
   reserve: number;
   /** Первый взнос до решателя. */
   downPayment: number;
+  /** Дата выдачи кредита; undefined — без дат («месяц 1…n»). */
+  issueDate: CalendarDate | undefined;
   prepayments: PrepaymentPlan[];
 }
 
@@ -83,6 +88,7 @@ export function evaluateScenario(state: AppState, profile: Profile, scenario: Sc
 
   const inputs: ScenarioInputs = {
     currency, apartment, product, savingsPlan, prepaymentPlan, savings, reserve: 0, downPayment: Number.NaN, prepayments: [],
+    issueDate: scenario.issueDate ? parseIsoDate(scenario.issueDate) : undefined,
   };
 
   try {
@@ -123,7 +129,8 @@ export function evaluateScenario(state: AppState, profile: Profile, scenario: Sc
         baseline,
         effect: prepaymentEffect(baseline, schedule),
         phases: paymentPhases(schedule),
-        years: yearlyTotals(schedule),
+        // С датой — суммы по календарным годам («сколько уйдёт в 2027-м»), без даты — по годам кредита.
+        years: inputs.issueDate ? calendarYearTotals(schedule, inputs.issueDate) : yearlyTotals(schedule),
       },
     };
   } catch (e) {

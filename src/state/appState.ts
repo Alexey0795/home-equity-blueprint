@@ -7,10 +7,11 @@
  * - сценарий ссылается на компоненты по id; правка компонента меняет все сценарии, где он используется.
  *
  * Версии 1–6 читаются в legacy.ts и переносятся в профиль «Я» (migrateLegacy).
+ * 7 — профили и компоненты; 8 — дата выдачи кредита у сценария (календарь платежей), в v7 её нет → null.
  * При несовместимом изменении формата — поднять STATE_VERSION и дописать миграцию.
  */
 
-import { convert, type Account, type CreditProduct, type Currency, type FreeVariable, type FxRates, type PrepaymentPlan, type RecurringPrepayment } from '../domain';
+import { convert, parseIsoDate, type Account, type CreditProduct, type Currency, type FreeVariable, type FxRates, type PrepaymentPlan, type RecurringPrepayment } from '../domain';
 import { LEGACY_VERSION, parseLegacy, type LegacyState } from './legacy';
 import {
   asArray,
@@ -27,7 +28,7 @@ import {
 import { parseAccount, parseProduct } from './parseShared';
 import { sampleProducts } from './sampleProducts';
 
-export const STATE_VERSION = 7;
+export const STATE_VERSION = 8;
 
 /** Квартира — компонент: цена в своей валюте (она же валюта сделки). */
 export interface Apartment {
@@ -79,6 +80,8 @@ export interface Scenario {
   freeVariable: FreeVariable;
   /** «Платёж не больше», в валюте сделки. */
   targetPayment: number;
+  /** Дата выдачи кредита «ГГГГ-ММ-ДД»; null — без дат, платежи «месяц 1…n». */
+  issueDate: string | null;
 }
 
 export interface Profile {
@@ -174,6 +177,7 @@ export function newScenario(profile: Profile, name: string): Scenario {
     prepaymentPlanId: null,
     freeVariable: 'payment',
     targetPayment: DEFAULT_TARGET_PAYMENT,
+    issueDate: null,
   };
 }
 
@@ -347,6 +351,7 @@ export function migrateLegacy(legacy: LegacyState): AppState {
       prepaymentPlanId,
       freeVariable: s.freeVariable,
       targetPayment: s.targetPayment,
+      issueDate: null,
     };
   });
   const profile: Profile = {
@@ -432,7 +437,19 @@ function parseScenario(raw: unknown, index: number, where: string): Scenario {
     prepaymentPlanId: typeof r.prepaymentPlanId === 'string' ? r.prepaymentPlanId : null,
     freeVariable: readFreeVariable(r, w),
     targetPayment: readNumber(r, 'targetPayment', w),
+    issueDate: readIssueDate(r),
   };
+}
+
+/** Дата выдачи: корректная «ГГГГ-ММ-ДД» или null (в v7 поля нет; битая дата — тоже null, а не ошибка загрузки). */
+function readIssueDate(r: Raw): string | null {
+  if (typeof r.issueDate !== 'string') return null;
+  try {
+    parseIsoDate(r.issueDate);
+    return r.issueDate;
+  } catch {
+    return null;
+  }
 }
 
 function parseProfile(raw: unknown, index: number, productIds: Set<string>): Profile {

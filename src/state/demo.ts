@@ -39,6 +39,7 @@ export function demoState(): AppState {
     prepaymentPlanId: null,
     freeVariable: 'payment',
     targetPayment: 3_000,
+    issueDate: '2027-01-15',
     ...patch,
   });
   const scenarios = [

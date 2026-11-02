@@ -1,7 +1,15 @@
-import type { Currency, PaymentSchedule } from '../domain';
+import { paymentDate, type CalendarDate, type Currency, type PaymentSchedule } from '../domain';
+import { formatDate } from './format';
 import { Money } from './Money';
 
-export function ScheduleTable({ schedule, currency }: { schedule: PaymentSchedule; currency: Currency }) {
+interface Props {
+  schedule: PaymentSchedule;
+  currency: Currency;
+  /** Дата выдачи — тогда у каждой строки своя дата платежа. */
+  issueDate?: CalendarDate;
+}
+
+export function ScheduleTable({ schedule, currency, issueDate }: Props) {
   const hasPrepayments = schedule.rows.some((r) => r.prepayment > 0);
   return (
     <div className="table-wrap">
@@ -9,6 +17,7 @@ export function ScheduleTable({ schedule, currency }: { schedule: PaymentSchedul
         <thead>
           <tr>
             <th>Месяц</th>
+            {issueDate && <th>Дата</th>}
             <th>Платёж</th>
             <th>Проценты</th>
             <th>Основной долг</th>
@@ -20,6 +29,7 @@ export function ScheduleTable({ schedule, currency }: { schedule: PaymentSchedul
           {schedule.rows.map((row) => (
             <tr key={row.month}>
               <td>{row.month}</td>
+              {issueDate && <td>{formatDate(paymentDate(issueDate, row.month))}</td>}
               <td><Money value={row.payment} currency={currency} showCode={false} /></td>
               <td><Money value={row.interest} currency={currency} showCode={false} /></td>
               <td><Money value={row.principal} currency={currency} showCode={false} /></td>
