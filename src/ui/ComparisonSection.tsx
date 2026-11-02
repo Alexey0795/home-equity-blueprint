@@ -2,7 +2,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import { convert, maxPayment, type Currency } from '../domain';
 import { MAX_COMPARED, type AppState, type Profile } from '../state/appState';
 import type { ScenarioEvaluation } from '../state/evaluate';
-import { COLORS, scenarioColor } from './charts/colors';
+import { useChartColors } from './charts/colors';
 import { formatCompact, formatMoney, formatTerm, toRoman } from './format';
 import { Money } from './Money';
 
@@ -29,7 +29,15 @@ interface Row {
   note: string;
 }
 
-function buildRows(state: AppState, profile: Profile, evaluations: Props['evaluations'], currency: Currency): Row[] {
+function buildRows(
+  state: AppState,
+  profile: Profile,
+  evaluations: Props['evaluations'],
+  currency: Currency,
+  scenarioColor: (index: number) => string,
+): Row[] {
+  // Квартира одна на всех — не повторяем её в каждой строке.
+  const sameApartment = new Set(profile.scenarios.map((s) => s.apartmentId)).size === 1;
   return profile.scenarios.map((s, index) => {
     const ev = evaluations.get(s.id)!;
     const product = ev.inputs.product;
@@ -40,7 +48,7 @@ function buildRows(state: AppState, profile: Profile, evaluations: Props['evalua
       roman: toRoman(index + 1),
       name: s.name || 'Без названия',
       color: scenarioColor(index),
-      terms: `${ev.inputs.apartment.name} · ${product ? product.name : `своя ставка ${s.annualRatePct}%`}`,
+      terms: `${sameApartment ? '' : `${ev.inputs.apartment.name} · `}${product ? product.name : `своя ставка ${s.annualRatePct}%`}`,
       compared: profile.comparedScenarioIds.includes(s.id),
     };
     if ('error' in r) return { ...base, values: null, note: 'не сходится' };
@@ -64,9 +72,20 @@ function buildRows(state: AppState, profile: Profile, evaluations: Props['evalua
   });
 }
 
+/** Разница с текущим сценарием: меньше — лучше (зелёный), больше — хуже (красный). */
+function Delta({ value, base, format }: { value: number; base: number | undefined; format: (n: number) => string }) {
+  if (base === undefined) return null;
+  const d = value - base;
+  if (Math.abs(d) < 0.005) return <span className="chip neutral">=</span>;
+  return <span className={`chip ${d < 0 ? 'good' : 'bad'}`}>{d > 0 ? '+' : '−'}{format(Math.abs(d))}</span>;
+}
+
 /** Сравнение всех сценариев в валюте активного: таблица + «горы переплаты» выбранных на одном графике. */
 export function ComparisonSection({ state, profile, evaluations, currency, onToggle, onSelect }: Props) {
-  const rows = buildRows(state, profile, evaluations, currency);
+  const colors = useChartColors();
+  const rows = buildRows(state, profile, evaluations, currency, colors.scenario);
+  const current = rows.find((r) => r.id === profile.activeScenarioId)?.values ?? undefined;
+  const money = (n: number) => formatCompact(n);
   const onChart = rows.filter((r) => r.compared && r.values);
   const months = Math.max(0, ...onChart.map((r) => r.values!.cumulative.length));
   const data = Array.from({ length: months }, (_, i) => {
@@ -85,7 +104,10 @@ export function ComparisonSection({ state, profile, evaluations, currency, onTog
   return (
     <section className="card">
       <h2>Сравнение сценариев</h2>
-      <p className="hint">Все суммы — в валюте текущего сценария ({currency}). Отметьте до {MAX_COMPARED} сценариев, чтобы сравнить их горы переплаты.</p>
+      <p className="hint">
+        Все суммы — в валюте текущего сценария ({currency}). Под числами — разница с текущим сценарием: зелёным — лучше,
+        красным — хуже. Отметьте до {MAX_COMPARED} сценариев, чтобы сравнить их горы переплаты.
+      </p>
       <div className="table-wrap">
         <table className="comparison">
           <thead>
@@ -119,9 +141,18 @@ export function ComparisonSection({ state, profile, evaluations, currency, onTog
                   <>
                     <td><Money value={r.values.price} currency={currency} showCode={false} /></td>
                     <td><Money value={r.values.loan} currency={currency} showCode={false} /></td>
-                    <td><Money value={r.values.maxPayment} currency={currency} showCode={false} /></td>
-                    <td><Money value={r.values.interest} currency={currency} showCode={false} /></td>
-                    <td>{formatTerm(r.values.months)}</td>
+                    <td>
+                      <Money value={r.values.maxPayment} currency={currency} showCode={false} />
+                      {r.id !== profile.activeScenarioId && <Delta value={r.values.maxPayment} base={current?.maxPayment} format={money} />}
+                    </td>
+                    <td>
+                      <Money value={r.values.interest} currency={currency} showCode={false} />
+                      {r.id !== profile.activeScenarioId && <Delta value={r.values.interest} base={current?.interest} format={money} />}
+                    </td>
+                    <td>
+                      {formatTerm(r.values.months)}
+                      {r.id !== profile.activeScenarioId && <Delta value={r.values.months} base={current?.months} format={(n) => formatTerm(Math.round(n))} />}
+                    </td>
                   </>
                 ) : (
                   <td colSpan={5} className="muted">—</td>
@@ -135,7 +166,7 @@ export function ComparisonSection({ state, profile, evaluations, currency, onTog
       {onChart.length > 0 ? (
         <ResponsiveContainer width="100%" height={320}>
           <LineChart data={data} margin={{ top: 16, right: 16, bottom: 8, left: 8 }}>
-            <CartesianGrid stroke={COLORS.grid} vertical={false} />
+            <CartesianGrid vertical={false} />
             <XAxis dataKey="month" ticks={ticks} tickFormatter={(m: number) => String(m / 12)} tickLine={false}
               label={{ value: 'год', position: 'insideBottomRight', offset: -4 }} />
             <YAxis tickFormatter={formatCompact} width={76} />

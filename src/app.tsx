@@ -1,5 +1,14 @@
 import { useMemo } from 'react';
-import { checkDealAgainstProduct, convert, loanAmount, maxPayment, prepaymentBanProblems, type FreeVariable } from './domain';
+import {
+  checkDealAgainstProduct,
+  convert,
+  loanAmount,
+  maxPayment,
+  paymentHeadroom,
+  prepaymentBanProblems,
+  type DealField,
+  type FreeVariable,
+} from './domain';
 import {
   activeProfile,
   activeScenario,
@@ -25,7 +34,7 @@ import { ComputedField } from './ui/ComputedField';
 import { describeProduct, formatPct } from './ui/describeProduct';
 import { DataFileButtons } from './ui/DataFileButtons';
 import { formatTerm, toRoman } from './ui/format';
-import { FxContext, Money } from './ui/Money';
+import { BigMoney, FxContext, Money } from './ui/Money';
 import { FREE_VARIABLE_HINTS, FreeVariablePicker } from './ui/FreeVariablePicker';
 import { NumberField } from './ui/NumberField';
 import { ProductsSection } from './ui/ProductsSection';
@@ -104,6 +113,12 @@ export function App() {
     return [...checkDealAgainstProduct({ ...product, maxLoan }, deal), ...prepaymentBanProblems(product, inputs.prepayments)];
   }, [product, deal, currency, state.fxRates, inputs.prepayments]);
 
+  /** Поля, которые нарушают условия банка, — подсвечиваются красной рамкой. */
+  const badFields = new Set<DealField>(productProblems.map((p) => p.field));
+  const bad = (...fields: DealField[]) => (fields.some((f) => badFields.has(f)) ? 'field-error' : '');
+  /** Запас до «платёж не больше» (< 0 — превышение). */
+  const headroom = 'error' in result ? Number.NaN : paymentHeadroom(result.baseline, scenario.targetPayment);
+
   const apartmentShared = sharedNote(scenariosUsing(profile, (s) => s.apartmentId === apartment.id));
   const downValue = scenario.downPayment.kind === 'manual' ? 'manual' : scenario.downPayment.planId;
   const usedProductIds = new Set(state.profiles.flatMap((p) => p.scenarios.flatMap((s) => (s.productId ? [s.productId] : []))));
@@ -157,10 +172,11 @@ export function App() {
         <p className="hint">{FREE_VARIABLE_HINTS[free]}</p>
 
         <div className="fields">
-          {free !== 'payment' && (
+          <div className={`field-with-action${headroom < 0 ? ' field-error' : ''}`}>
             <NumberField label={`Платёж не больше, ${currency}`} value={scenario.targetPayment} currency={currency}
               onChange={(targetPayment) => update({ targetPayment })} step={50} />
-          )}
+            {free === 'payment' && <small className="muted">ориентир: самый большой платёж сравнивается с ним</small>}
+          </div>
 
           <div className="field-with-action">
             <label className="field">
@@ -174,8 +190,10 @@ export function App() {
           {free === 'price' ? (
             <ComputedField label={`Цена квартиры, ${currency}`} money={'error' in result ? undefined : { value: deal.price, currency }} value="—" />
           ) : (
-            <NumberField label={`Цена квартиры, ${currency}`} value={apartment.price} step={1000} currency={currency}
-              onChange={(price) => setProfile((p) => ({ ...p, apartments: p.apartments.map((a) => (a.id === apartment.id ? { ...a, price } : a)) }))} />
+            <div className={bad('loan')}>
+              <NumberField label={`Цена квартиры, ${currency}`} value={apartment.price} step={1000} currency={currency}
+                onChange={(price) => setProfile((p) => ({ ...p, apartments: p.apartments.map((a) => (a.id === apartment.id ? { ...a, price } : a)) }))} />
+            </div>
           )}
 
           <label className="field">
@@ -190,6 +208,7 @@ export function App() {
               {profile.savingsPlans.map((sp) => <option key={sp.id} value={sp.id}>Из сбережений: {sp.name}</option>)}
             </select>
           </label>
+          <div className={bad('downPayment', 'loan')}>
           {free === 'downPayment' ? (
             <ComputedField label={`Первый взнос, ${currency}`} money={'error' in result ? undefined : { value: deal.downPayment, currency }} value="—" />
           ) : scenario.downPayment.kind === 'manual' ? (
@@ -202,6 +221,7 @@ export function App() {
               {inputs.reserve > 0 && <small>сбережения минус резерв <Money value={inputs.reserve} currency={currency} /></small>}
             </div>
           )}
+          </div>
 
           <label className="field">
             <span>Кредит</span>
@@ -223,9 +243,11 @@ export function App() {
             <ComputedField label="Ставка рефинансирования" value={'error' in result ? '—' : formatPct(solvedRefinancing)} />
           )}
           {free === 'term' ? (
-            <ComputedField label="Срок" value={'error' in result ? '—' : formatTerm(deal.termMonths)} />
+            <div className={bad('term')}>
+              <ComputedField label="Срок" value={'error' in result ? '—' : formatTerm(deal.termMonths)} />
+            </div>
           ) : (
-            <div className="field-with-action">
+            <div className={`field-with-action ${bad('term')}`}>
               {/* Срок хранится в месяцах; в годах показываем с округлением, точное значение — подписью. */}
               <NumberField label="Срок, лет" value={Math.round((scenario.termMonths / 12) * 100) / 100} step={0.5} min={0.5}
                 onChange={(years) => update({ termMonths: Math.round(years * 12) })} />
@@ -235,7 +257,7 @@ export function App() {
             </div>
           )}
 
-          <label className="field">
+          <label className={`field ${bad('prepayments')}`}>
             <span>Досрочные взносы</span>
             <select aria-label="План досрочки" value={scenario.prepaymentPlanId ?? ''}
               onChange={(e) => update({ prepaymentPlanId: e.target.value || null })}>
@@ -253,7 +275,7 @@ export function App() {
             {product.notes && <p className="hint">{product.notes}</p>}
           </div>
         )}
-        {productProblems.map((problem) => <p key={problem} className="warning">⚠ {problem}</p>)}
+        {productProblems.map((problem) => <p key={problem.message} className="warning">⚠ {problem.message}</p>)}
         {'error' in result && <p className="error">{result.error}</p>}
         <p className="hint">
           Квартиры, распределения сбережений и планы досрочки настраиваются ниже, в «Компонентах профиля». Данные сохраняются
@@ -264,11 +286,13 @@ export function App() {
       {'error' in result ? null : (
         <>
           <section className="card summary">
-            <div><span>Сумма кредита</span><strong><Money value={loan} currency={currency} /></strong></div>
-            <div>
+            <div className={badFields.has('loan') ? 'over' : ''}>
+              <span>Сумма кредита</span><strong><BigMoney value={loan} currency={currency} /></strong>
+            </div>
+            <div className={headroom < 0 ? 'over' : ''}>
               <span>Ежемесячный платёж</span>
               {result.phases.length === 1 ? (
-                <strong><Money value={result.schedule.monthlyPayment} currency={currency} /></strong>
+                <strong><BigMoney value={result.schedule.monthlyPayment} currency={currency} /></strong>
               ) : (
                 <ul className="phases">
                   {result.phases.slice(0, MAX_PHASES).map((ph) => (
@@ -282,12 +306,18 @@ export function App() {
                   )}
                 </ul>
               )}
+              {Number.isFinite(headroom) && Number.isFinite(scenario.targetPayment) && (
+                <span className={`chip ${headroom < 0 ? 'bad' : 'good'}`}>
+                  {headroom < 0 ? 'выше желаемого на ' : 'запас до желаемого '}
+                  <Money value={Math.abs(headroom)} currency={currency} />
+                </span>
+              )}
             </div>
-            <div><span>Переплата по процентам</span><strong className="interest"><Money value={result.schedule.totalInterest} currency={currency} /></strong></div>
-            <div><span>Всего выплат</span><strong><Money value={result.schedule.totalPaid} currency={currency} /></strong></div>
+            <div><span>Переплата по процентам</span><strong className="interest"><BigMoney value={result.schedule.totalInterest} currency={currency} /></strong></div>
+            <div><span>Всего выплат</span><strong><BigMoney value={result.schedule.totalPaid} currency={currency} /></strong></div>
             {inputs.prepayments.length > 0 && (
               <>
-                <div><span>Экономия от досрочки</span><strong className="ok"><Money value={result.effect.interestSaved} currency={currency} /></strong></div>
+                <div><span>Экономия от досрочки</span><strong className="ok"><BigMoney value={result.effect.interestSaved} currency={currency} /></strong></div>
                 <div><span>Кредит закроется через</span><strong>{formatTerm(result.schedule.rows.length)}</strong></div>
               </>
             )}

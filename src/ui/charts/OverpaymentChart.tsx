@@ -1,7 +1,7 @@
 import { Area, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { PaymentSchedule } from '../../domain';
 import { formatCompact, formatMoney } from '../format';
-import { COLORS } from './colors';
+import { useChartColors } from './colors';
 
 interface Props {
   schedule: PaymentSchedule;
@@ -21,6 +21,7 @@ interface Point {
  * С досрочкой кредит закрывается раньше — после этого гора остаётся плато на итоговой переплате.
  */
 export function OverpaymentChart({ schedule, baseline }: Props) {
+  const colors = useChartColors();
   const months = Math.max(schedule.rows.length, baseline?.rows.length ?? 0);
   const last = schedule.rows.at(-1)!;
   const data: Point[] = [];
@@ -39,7 +40,7 @@ export function OverpaymentChart({ schedule, baseline }: Props) {
   return (
     <ResponsiveContainer width="100%" height={320}>
       <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-        <CartesianGrid stroke={COLORS.grid} vertical={false} />
+        <CartesianGrid vertical={false} />
         <XAxis dataKey="month" ticks={ticks} tickFormatter={(m: number) => String(m / 12)} tickLine={false}
           label={{ value: 'год', position: 'insideBottomRight', offset: -4 }} />
         <YAxis tickFormatter={formatCompact} width={76} />
@@ -49,12 +50,12 @@ export function OverpaymentChart({ schedule, baseline }: Props) {
         />
         <Legend itemSorter={null} />
         <Area type="monotone" dataKey="cumulativeInterest" name="Переплата нарастающим итогом"
-          stroke={COLORS.interest} fill={COLORS.interest} fillOpacity={0.35} isAnimationActive={false} />
+          stroke={colors.interest} fill={colors.interest} fillOpacity={0.35} isAnimationActive={false} />
         {baseline && (
-          <Line type="monotone" dataKey="baselineInterest" name="Переплата без досрочки" stroke={COLORS.interest}
+          <Line type="monotone" dataKey="baselineInterest" name="Переплата без досрочки" stroke={colors.interest}
             strokeDasharray="6 4" dot={false} strokeWidth={2} isAnimationActive={false} />
         )}
-        <Line type="monotone" dataKey="balance" name="Остаток долга" stroke={COLORS.balance} dot={false}
+        <Line type="monotone" dataKey="balance" name="Остаток долга" stroke={colors.balance} dot={false}
           strokeWidth={2} isAnimationActive={false} />
       </ComposedChart>
     </ResponsiveContainer>

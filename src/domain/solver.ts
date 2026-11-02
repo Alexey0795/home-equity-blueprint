@@ -42,6 +42,11 @@ export interface Solution {
   baseline: PaymentSchedule;
 }
 
+/** Запас до «платёж не больше»: > 0 — столько остаётся, < 0 — на столько самый большой платёж превышает желаемый. */
+export function paymentHeadroom(schedule: PaymentSchedule, targetPayment: number): number {
+  return targetPayment - maxPayment(schedule);
+}
+
 /** Самый большой платёж графика. */
 export function maxPayment(schedule: PaymentSchedule): number {
   return schedule.rows.reduce((max, row) => Math.max(max, row.payment), 0);

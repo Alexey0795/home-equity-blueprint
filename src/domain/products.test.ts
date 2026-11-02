@@ -52,10 +52,10 @@ describe('checkDealAgainstProduct', () => {
   });
   it('каждое нарушение — отдельное замечание', () => {
     const problems = checkDealAgainstProduct(product(), { price: 300_000, downPayment: 10_000, termMonths: 300 });
-    expect(problems).toHaveLength(3);
-    expect(problems[0]).toContain('10%');
-    expect(problems[1]).toContain('20 лет');
-    expect(problems[2]).toContain('лимита');
+    expect(problems.map((p) => p.field)).toEqual(['downPayment', 'term', 'loan']);
+    expect(problems[0]!.message).toContain('10%');
+    expect(problems[1]!.message).toContain('20 лет');
+    expect(problems[2]!.message).toContain('лимита');
   });
   it('лимит не указан — сумма не проверяется', () => {
     expect(checkDealAgainstProduct(product({ maxLoan: null }), { ...ok, price: 10_000_000, downPayment: 1_000_000 }))
@@ -70,7 +70,8 @@ describe('prepaymentBanProblems', () => {
       { month: 61, amount: 10_000, mode: 'reduceTerm' },
     ]);
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('60-м мес.');
+    expect(problems[0]).toMatchObject({ field: 'prepayments' });
+    expect(problems[0]!.message).toContain('60-м мес.');
   });
   it('без запрета — без замечаний', () => {
     expect(prepaymentBanProblems(product({ prepaymentBanMonths: 0 }), [{ month: 1, amount: 1, mode: 'reduceTerm' }])).toEqual([]);

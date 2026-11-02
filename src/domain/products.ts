@@ -59,30 +59,41 @@ export interface DealTerms {
   termMonths: number;
 }
 
+/** Какое поле сделки нарушает условие банка — чтобы подсветить именно его. */
+export type DealField = 'downPayment' | 'term' | 'loan' | 'prepayments';
+
+export interface DealIssue {
+  field: DealField;
+  message: string;
+}
+
 /** Нарушения условий банка в сделке — пустой список, если всё в порядке. Не ошибки: посчитать можно, но банк так не даст. */
-export function checkDealAgainstProduct(product: CreditProduct, deal: DealTerms): string[] {
-  const problems: string[] = [];
+export function checkDealAgainstProduct(product: CreditProduct, deal: DealTerms): DealIssue[] {
+  const issues: DealIssue[] = [];
   const minDown = (deal.price * product.minDownPct) / 100;
   if (deal.downPayment < minDown) {
-    problems.push(`Первый взнос меньше минимума банка (${product.minDownPct}% от цены)`);
+    issues.push({ field: 'downPayment', message: `Первый взнос меньше минимума банка (${product.minDownPct}% от цены)` });
   }
   if (deal.termMonths > product.maxTermMonths) {
-    problems.push(`Срок больше максимального у банка (${product.maxTermMonths / 12} лет)`);
+    issues.push({ field: 'term', message: `Срок больше максимального у банка (${product.maxTermMonths / 12} лет)` });
   }
   const loan = deal.price - deal.downPayment;
   if (product.maxLoan !== null && loan > product.maxLoan) {
-    problems.push('Сумма кредита больше лимита банка');
+    issues.push({ field: 'loan', message: 'Сумма кредита больше лимита банка' });
   }
   if (product.interestOnlyMonths >= deal.termMonths) {
-    problems.push('Срок короче периода «только проценты»');
+    issues.push({ field: 'term', message: 'Срок короче периода «только проценты»' });
   }
-  return problems;
+  return issues;
 }
 
 /** Досрочные взносы, попавшие в период запрета досрочного погашения. Предупреждение, а не ошибка. */
-export function prepaymentBanProblems(product: CreditProduct, prepayments: PrepaymentPlan[]): string[] {
+export function prepaymentBanProblems(product: CreditProduct, prepayments: PrepaymentPlan[]): DealIssue[] {
   if (product.prepaymentBanMonths <= 0) return [];
   return prepayments
     .filter((p) => p.amount > 0 && p.month <= product.prepaymentBanMonths)
-    .map((p) => `Досрочный взнос в ${p.month}-м мес. — банк запрещает досрочное погашение первые ${product.prepaymentBanMonths} мес.`);
+    .map((p) => ({
+      field: 'prepayments' as const,
+      message: `Досрочный взнос в ${p.month}-м мес. — банк запрещает досрочное погашение первые ${product.prepaymentBanMonths} мес.`,
+    }));
 }

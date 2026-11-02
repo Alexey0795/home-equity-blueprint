@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CreditProduct } from './products';
-import { maxPayment, scheduleForDeal, solveDeal, type DealInput } from './solver';
+import { maxPayment, paymentHeadroom, scheduleForDeal, solveDeal, type DealInput } from './solver';
 
 const kopecks = (n: number) => Math.round(n * 100) / 100;
 const exactPayment = 88_848.7886783416; // 1 000 000 под 12% на 12 мес.
@@ -104,5 +104,13 @@ describe('решатель и досрочка', () => {
     expect(kopecks(deal.downPayment)).toBe(500_000);
     expect(baseline.rows).toHaveLength(12);
     expect(schedule.rows).toHaveLength(9);
+  });
+});
+
+describe('paymentHeadroom', () => {
+  const { schedule } = solveDeal('payment', manual());
+  it('платёж 88 848,79: при желаемом 90 000 запас 1 151,21, при 80 000 превышение 8 848,79', () => {
+    expect(kopecks(paymentHeadroom(schedule, 90_000))).toBe(1_151.21);
+    expect(kopecks(paymentHeadroom(schedule, 80_000))).toBe(-8_848.79);
   });
 });
