@@ -25,3 +25,17 @@ export function formatTerm(months: number): string {
   if (rest > 0 || years === 0) parts.push(`${rest} мес.`);
   return parts.join(' ');
 }
+
+/** Номер сценария римскими цифрами: 1 → I, 4 → IV, 14 → XIV. */
+export function toRoman(n: number): string {
+  const table: [number, string][] = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+  let rest = Math.floor(n);
+  let out = '';
+  for (const [value, sign] of table) {
+    while (rest >= value) {
+      out += sign;
+      rest -= value;
+    }
+  }
+  return out;
+}

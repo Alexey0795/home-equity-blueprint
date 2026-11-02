@@ -1,20 +1,24 @@
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { convert, maxPayment, type Currency } from '../domain';
-import { findProduct, MAX_COMPARED, type AppState } from '../state/appState';
-import type { ScenarioResult } from '../state/evaluate';
+import { MAX_COMPARED, type AppState, type Profile } from '../state/appState';
+import type { ScenarioEvaluation } from '../state/evaluate';
 import { COLORS, scenarioColor } from './charts/colors';
-import { formatCompact, formatMoney, formatTerm } from './format';
+import { formatCompact, formatMoney, formatTerm, toRoman } from './format';
 
 interface Props {
   state: AppState;
-  results: Map<string, ScenarioResult | { error: string }>;
+  profile: Profile;
+  evaluations: Map<string, ScenarioEvaluation>;
   /** Валюта активного сценария — в ней сравниваем все. */
   currency: Currency;
   onToggle: (id: string) => void;
+  /** Клик по названию — перейти к сценарию. */
+  onSelect: (id: string) => void;
 }
 
 interface Row {
   id: string;
+  roman: string;
   name: string;
   color: string;
   terms: string;
@@ -24,20 +28,23 @@ interface Row {
   note: string;
 }
 
-function buildRows(state: AppState, results: Props['results'], currency: Currency): Row[] {
-  return state.scenarios.map((s, index) => {
-    const product = findProduct(state, s.productId);
-    const r = results.get(s.id);
+function buildRows(state: AppState, profile: Profile, evaluations: Props['evaluations'], currency: Currency): Row[] {
+  return profile.scenarios.map((s, index) => {
+    const ev = evaluations.get(s.id)!;
+    const product = ev.inputs.product;
+    const r = ev.result;
+    const from = ev.inputs.currency;
     const base = {
       id: s.id,
+      roman: toRoman(index + 1),
       name: s.name || 'Без названия',
       color: scenarioColor(index),
-      terms: product ? product.name : `своя ставка ${s.annualRatePct}%`,
-      compared: state.comparedScenarioIds.includes(s.id),
+      terms: `${ev.inputs.apartment.name} · ${product ? product.name : `своя ставка ${s.annualRatePct}%`}`,
+      compared: profile.comparedScenarioIds.includes(s.id),
     };
-    if (!r || 'error' in r) return { ...base, values: null, note: 'не сходится' };
+    if ('error' in r) return { ...base, values: null, note: 'не сходится' };
     try {
-      const conv = (n: number) => convert(n, s.currency, currency, state.fxRates);
+      const conv = (n: number) => convert(n, from, currency, state.fxRates);
       return {
         ...base,
         values: {
@@ -48,17 +55,17 @@ function buildRows(state: AppState, results: Props['results'], currency: Currenc
           months: r.schedule.rows.length,
           cumulative: r.schedule.rows.map((row) => conv(row.cumulativeInterest)),
         },
-        note: s.currency === currency ? '' : `пересчитано из ${s.currency}`,
+        note: from === currency ? '' : `пересчитано из ${from}`,
       };
     } catch {
-      return { ...base, values: null, note: `нет курса ${s.currency}` };
+      return { ...base, values: null, note: `нет курса ${from}` };
     }
   });
 }
 
 /** Сравнение всех сценариев в валюте активного: таблица + «горы переплаты» выбранных на одном графике. */
-export function ComparisonSection({ state, results, currency, onToggle }: Props) {
-  const rows = buildRows(state, results, currency);
+export function ComparisonSection({ state, profile, evaluations, currency, onToggle, onSelect }: Props) {
+  const rows = buildRows(state, profile, evaluations, currency);
   const onChart = rows.filter((r) => r.compared && r.values);
   const months = Math.max(0, ...onChart.map((r) => r.values!.cumulative.length));
   const data = Array.from({ length: months }, (_, i) => {
@@ -72,7 +79,7 @@ export function ComparisonSection({ state, results, currency, onToggle }: Props)
   });
   const step = months > 240 ? 60 : 12;
   const ticks = data.filter((p) => p.month! % step === 0).map((p) => p.month!);
-  const full = state.comparedScenarioIds.length >= MAX_COMPARED;
+  const full = profile.comparedScenarioIds.length >= MAX_COMPARED;
 
   return (
     <section className="card">
@@ -94,14 +101,16 @@ export function ComparisonSection({ state, results, currency, onToggle }: Props)
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className={r.id === state.activeScenarioId ? 'current' : ''}>
+              <tr key={r.id} className={r.id === profile.activeScenarioId ? 'current' : ''}>
                 <td>
                   <input type="checkbox" aria-label={`Показать «${r.name}» на графике`} checked={r.compared}
                     disabled={!r.compared && (full || !r.values)} onChange={() => onToggle(r.id)} />
                 </td>
                 <td className="name">
                   <span className="swatch" style={{ background: r.color }} aria-hidden />
-                  {r.name}
+                  <button type="button" className="link scenario-link" onClick={() => onSelect(r.id)} title="Перейти к сценарию">
+                    <span className="roman">{r.roman}</span> {r.name}
+                  </button>
                   {r.note && <small className="note">{r.note}</small>}
                 </td>
                 <td className="terms">{r.terms}</td>
@@ -132,7 +141,7 @@ export function ComparisonSection({ state, results, currency, onToggle }: Props)
             <Tooltip formatter={(value) => formatMoney(Number(value), currency)} labelFormatter={(m) => `Месяц ${String(m)}`} />
             <Legend itemSorter={null} />
             {onChart.map((r) => (
-              <Line key={r.id} type="monotone" dataKey={r.id} name={r.name} stroke={r.color} strokeWidth={2} dot={false}
+              <Line key={r.id} type="monotone" dataKey={r.id} name={`${r.roman} ${r.name}`} stroke={r.color} strokeWidth={2} dot={false}
                 isAnimationActive={false} />
             ))}
           </LineChart>

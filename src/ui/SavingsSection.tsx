@@ -9,6 +9,8 @@ interface Props {
   fxRates: FxRates;
   dealCurrency: Currency;
   downPayment: number;
+  /** Резерв «на чёрный день» из распределения сбережений сценария, в валюте сделки. */
+  reserve: number;
   /** Итоги по счетам или текст ошибки, если какие-то поля не заполнены. */
   summary: SavingsSummary | { error: string };
   onAccountsChange: (accounts: Account[]) => void;
@@ -16,7 +18,7 @@ interface Props {
 }
 
 export function SavingsSection(props: Props) {
-  const { accounts, fxRates, dealCurrency, downPayment, summary, onAccountsChange, onRatesChange } = props;
+  const { accounts, fxRates, dealCurrency, downPayment, reserve, summary, onAccountsChange, onRatesChange } = props;
 
   function updateAccount(id: string, patch: Partial<Account>) {
     onAccountsChange(accounts.map((a) => (a.id === id ? { ...a, ...patch } : a)));
@@ -24,7 +26,7 @@ export function SavingsSection(props: Props) {
 
   return (
     <section className="card">
-      <h2>Сбережения</h2>
+      <h2>Сбережения профиля</h2>
 
       {accounts.length > 0 && (
         <table className="accounts">
@@ -67,7 +69,7 @@ export function SavingsSection(props: Props) {
       )}
       <button type="button" onClick={() => onAccountsChange([...accounts, newAccount()])}>+ Добавить счёт</button>
 
-      <h3>Курсы, вводятся вручную</h3>
+      <h3>Курсы, вводятся вручную (общие для всех профилей)</h3>
       <div className="fields rates">
         <NumberField label="1 USD = … BYN" value={fxRates.USD} step={0.0001}
           onChange={(USD) => onRatesChange({ ...fxRates, USD })} />
@@ -79,20 +81,31 @@ export function SavingsSection(props: Props) {
       {'error' in summary ? (
         <p className="error">{summary.error}</p>
       ) : (
-        <DownPaymentProgress summary={summary} downPayment={downPayment} currency={dealCurrency} />
+        <DownPaymentProgress summary={summary} downPayment={downPayment} reserve={reserve} currency={dealCurrency} />
       )}
     </section>
   );
 }
 
-function DownPaymentProgress({ summary, downPayment, currency }: { summary: SavingsSummary; downPayment: number; currency: Currency }) {
-  const gap = gapToDownPayment(downPayment, summary.availableForDown);
-  const share = downPayment > 0 ? Math.min(1, summary.availableForDown / downPayment) : 1;
+interface ProgressProps {
+  summary: SavingsSummary;
+  downPayment: number;
+  reserve: number;
+  currency: Currency;
+}
+
+function DownPaymentProgress({ summary, downPayment, reserve, currency }: ProgressProps) {
+  // Резерв не трогаем: на взнос идёт только то, что сверх него.
+  const usable = Math.max(0, summary.availableForDown - reserve);
+  const gap = gapToDownPayment(downPayment, usable);
+  const share = downPayment > 0 ? Math.min(1, usable / downPayment) : 1;
   return (
     <div className="savings-summary">
       <div className="summary">
         <div><span>Всего сбережений</span><strong>{formatMoney(summary.total, currency)}</strong></div>
         <div><span>Можно направить на взнос</span><strong>{formatMoney(summary.availableForDown, currency)}</strong></div>
+        {reserve > 0 && <div><span>Из них в резерве</span><strong>{formatMoney(reserve, currency)}</strong></div>}
+        <div><span>Первый взнос сценария</span><strong>{Number.isFinite(downPayment) ? formatMoney(downPayment, currency) : '—'}</strong></div>
         {Number.isFinite(gap) && (gap > 0 ? (
           <div><span>Не хватает на взнос</span><strong className="interest">{formatMoney(gap, currency)}</strong></div>
         ) : (

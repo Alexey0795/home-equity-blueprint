@@ -1,21 +1,71 @@
 import { describe, expect, it } from 'vitest';
-import { defaultState } from './appState';
+import { activeProfile, defaultState, newAccount, newPrepaymentPlan, type AppState, type Profile } from './appState';
 import { evaluateScenario } from './evaluate';
 
 const kopecks = (n: number) => Math.round(n * 100) / 100;
 
+function setup(patch: (p: Profile) => void): { state: AppState; profile: Profile } {
+  const state = defaultState();
+  state.fxRates = { USD: 3.25, EUR: 3.5 };
+  const profile = activeProfile(state);
+  patch(profile);
+  return { state, profile };
+}
+
 describe('evaluateScenario', () => {
-  it('сценарий по умолчанию: 240 000 под 12% на 20 лет → 2 642,61 в месяц', () => {
-    const state = defaultState();
-    const result = evaluateScenario(state, state.scenarios[0]!);
+  it('по умолчанию: 300 000 − 60 000 под 12% на 20 лет → 2 642,61 в месяц', () => {
+    const { state, profile } = setup(() => {});
+    const { result } = evaluateScenario(state, profile, profile.scenarios[0]!);
     if ('error' in result) throw new Error(result.error);
     expect(kopecks(result.schedule.monthlyPayment)).toBe(2_642.61);
   });
 
-  it('не сходится → { error } с причиной, без исключения', () => {
-    const state = defaultState();
-    const scenario = { ...state.scenarios[0]!, freeVariable: 'term' as const, targetPayment: 100 };
-    const result = evaluateScenario(state, scenario);
+  it('взнос из сбережений: 10 000 BYN + 2 000 USD (×3,25) = 16 500, резерв 1 000 USD (3 250) → взнос 13 250', () => {
+    const { state, profile } = setup((p) => {
+      p.accounts = [
+        { ...newAccount(), amount: 10_000 },
+        { ...newAccount(), currency: 'USD', amount: 2_000 },
+        { ...newAccount(), currency: 'EUR', amount: 1_000, useForDownPayment: false },
+      ];
+      p.savingsPlans[0]!.reserve = 1_000;
+      p.savingsPlans[0]!.reserveCurrency = 'USD';
+      p.scenarios[0]!.downPayment = { kind: 'savings', planId: p.savingsPlans[0]!.id };
+    });
+    const { inputs, result } = evaluateScenario(state, profile, profile.scenarios[0]!);
+    expect(inputs.reserve).toBe(3_250);
+    expect(inputs.downPayment).toBe(13_250);
+    if ('error' in result) throw new Error(result.error);
+    expect(result.deal.downPayment).toBe(13_250);
+  });
+
+  it('план досрочки в USD пересчитывается в валюту сделки (BYN); повторяющиеся разворачиваются', () => {
+    const { state, profile } = setup((p) => {
+      const plan = newPrepaymentPlan('План', 'USD');
+      plan.recurring = [{ id: 'r', fromMonth: 12, toMonth: 36, everyMonths: 12, amount: 1_000, mode: 'reduceTerm' }];
+      p.prepaymentPlans = [plan];
+      p.scenarios[0]!.prepaymentPlanId = plan.id;
+    });
+    const { inputs, result } = evaluateScenario(state, profile, profile.scenarios[0]!);
+    expect(inputs.prepayments.map((x) => [x.month, x.amount])).toEqual([[12, 3_250], [24, 3_250], [36, 3_250]]);
+    if ('error' in result) throw new Error(result.error);
+    expect(result.effect.interestSaved).toBeGreaterThan(0);
+  });
+
+  it('пустая сумма на счёте при взносе из сбережений → понятная ошибка, без исключения', () => {
+    const { state, profile } = setup((p) => {
+      p.accounts = [{ ...newAccount(), name: 'Копилка', amount: Number.NaN }];
+      p.scenarios[0]!.downPayment = { kind: 'savings', planId: p.savingsPlans[0]!.id };
+    });
+    const { result } = evaluateScenario(state, profile, profile.scenarios[0]!);
+    expect('error' in result && result.error).toContain('«Копилка»');
+  });
+
+  it('не сходится → { error } с причиной', () => {
+    const { state, profile } = setup((p) => {
+      p.scenarios[0]!.freeVariable = 'term';
+      p.scenarios[0]!.targetPayment = 100;
+    });
+    const { result } = evaluateScenario(state, profile, profile.scenarios[0]!);
     expect('error' in result && result.error).toContain('Не сходится');
   });
 });

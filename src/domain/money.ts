@@ -58,3 +58,9 @@ export function summarizeSavings(accounts: Account[], dealCurrency: Currency, ra
 export function gapToDownPayment(downPayment: number, availableForDown: number): number {
   return downPayment - availableForDown;
 }
+
+/** Первый взнос из сбережений: всё, что можно направить на взнос, минус резерв «на чёрный день» (не меньше 0). */
+export function downPaymentFromSavings(availableForDown: number, reserve: number): number {
+  if (!Number.isFinite(reserve) || reserve < 0) throw new RangeError('Резерв должен быть неотрицательным числом');
+  return Math.max(0, availableForDown - reserve);
+}

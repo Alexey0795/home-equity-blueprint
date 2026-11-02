@@ -82,3 +82,12 @@ export interface PaymentPhase {
   toMonth: number;
   payment: number;
 }
+
+/** Повторяющийся досрочный взнос: «каждые everyMonths мес. по amount, с fromMonth по toMonth включительно». */
+export interface RecurringPrepayment {
+  fromMonth: number;
+  toMonth: number;
+  everyMonths: number;
+  amount: number;
+  mode: PrepaymentMode;
+}

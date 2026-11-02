@@ -1,69 +1,107 @@
 /**
  * Состояние приложения — один JSON. Хранится в localStorage и выгружается в файл.
- * Формат сразу под список сценариев (этап 6), хотя на экране пока один активный.
- * Счета и курсы — общие для всех сценариев.
- * При несовместимом изменении формата — поднять STATE_VERSION и дописать миграцию в parseState.
  *
- * История версий:
- * 1 — сценарии (цена, взнос, ставка, срок).
- * 2 — счета, ручные курсы, валюта сделки в сценарии.
- * 3 — карточки банков, ставка рефинансирования, выбор карточки в сценарии.
- * 4 — режим «зафиксировать всё, кроме одного»: свободная величина и желаемый платёж в сценарии.
- * 5 — досрочные взносы в сценарии.
- * 6 — список сценариев для сравнения на одном графике.
+ * Вложенность «матрёшкой» (версия 7):
+ * - общее для всех: карточки банков, курсы валют, ставка рефинансирования;
+ * - профиль (человек): счета, компоненты (квартиры, распределения сбережений, планы досрочки) и сценарии;
+ * - сценарий ссылается на компоненты по id; правка компонента меняет все сценарии, где он используется.
+ *
+ * Версии 1–6 читаются в legacy.ts и переносятся в профиль «Я» (migrateLegacy).
+ * При несовместимом изменении формата — поднять STATE_VERSION и дописать миграцию.
  */
 
+import { convert, type Account, type CreditProduct, type Currency, type FreeVariable, type FxRates, type PrepaymentPlan, type RecurringPrepayment } from '../domain';
+import { LEGACY_VERSION, parseLegacy, type LegacyState } from './legacy';
 import {
-  CURRENCIES,
-  FREE_VARIABLES,
-  type Account,
-  type CreditProduct,
-  type Currency,
-  type FreeVariable,
-  type FxRates,
-  type PrepaymentPlan,
-  type RatePeriod,
-} from '../domain';
+  asArray,
+  asObject,
+  readCurrency,
+  readFreeVariable,
+  readId,
+  readMode,
+  readNumber,
+  readString,
+  uniqueIds,
+  type Raw,
+} from './parse';
+import { parseAccount, parseProduct } from './parseShared';
 import { sampleProducts } from './sampleProducts';
 
-export const STATE_VERSION = 6;
+export const STATE_VERSION = 7;
 
-export interface Scenario {
+/** Квартира — компонент: цена в своей валюте (она же валюта сделки). */
+export interface Apartment {
   id: string;
   name: string;
-  /** Валюта сделки: в ней цена, взнос и весь график. */
   currency: Currency;
-  /** Цена объекта. */
   price: number;
-  downPayment: number;
-  /** Карточка банка; null — ставка вводится вручную (annualRatePct). */
-  productId: string | null;
-  /** % годовых — для ручного режима. */
-  annualRatePct: number;
-  termMonths: number;
-  /** Какая величина вычисляется; остальные зафиксированы. */
-  freeVariable: FreeVariable;
-  /** Желаемый (максимальный) ежемесячный платёж — используется, когда свободен не платёж. */
-  targetPayment: number;
-  /** Досрочные взносы этого сценария. */
-  prepayments: Prepayment[];
+}
+
+/** Распределение сбережений — компонент: сколько оставить в резерве, остальное (с флагом «на взнос») — в первый взнос. */
+export interface SavingsPlan {
+  id: string;
+  name: string;
+  reserve: number;
+  reserveCurrency: Currency;
 }
 
 export interface Prepayment extends PrepaymentPlan {
   id: string;
 }
 
+export interface Recurring extends RecurringPrepayment {
+  id: string;
+}
+
+/** План досрочки — компонент: разовые и повторяющиеся взносы; суммы — в валюте плана. */
+export interface PrepaymentPlanComponent {
+  id: string;
+  name: string;
+  currency: Currency;
+  oneOff: Prepayment[];
+  recurring: Recurring[];
+}
+
+/** Откуда первый взнос: из сбережений по распределению или своей суммой (в валюте сделки). */
+export type DownPaymentSource = { kind: 'savings'; planId: string } | { kind: 'manual'; amount: number };
+
+export interface Scenario {
+  id: string;
+  name: string;
+  apartmentId: string;
+  /** Карточка банка; null — своя ставка (annualRatePct). */
+  productId: string | null;
+  annualRatePct: number;
+  termMonths: number;
+  downPayment: DownPaymentSource;
+  /** План досрочки; null — без досрочки. */
+  prepaymentPlanId: string | null;
+  freeVariable: FreeVariable;
+  /** «Платёж не больше», в валюте сделки. */
+  targetPayment: number;
+}
+
+export interface Profile {
+  id: string;
+  name: string;
+  accounts: Account[];
+  apartments: Apartment[];
+  savingsPlans: SavingsPlan[];
+  prepaymentPlans: PrepaymentPlanComponent[];
+  scenarios: Scenario[];
+  activeScenarioId: string;
+  /** id сценариев на графике сравнения. */
+  comparedScenarioIds: string[];
+}
+
 export interface AppState {
   version: typeof STATE_VERSION;
-  activeScenarioId: string;
-  scenarios: Scenario[];
-  accounts: Account[];
-  fxRates: FxRates;
+  profiles: Profile[];
+  activeProfileId: string;
   products: CreditProduct[];
+  fxRates: FxRates;
   /** Ставка рефинансирования Нацбанка, % годовых — общая для всех карточек «СР + надбавка». */
   refinancingRatePct: number;
-  /** id сценариев, которые показываются на графике сравнения. */
-  comparedScenarioIds: string[];
 }
 
 /** Ориентировочные курсы для первого запуска; пользователь вводит актуальные сам. */
@@ -74,32 +112,37 @@ export const DEFAULT_REFINANCING_RATE_PCT = 9.25;
 
 export const DEFAULT_TARGET_PAYMENT = 3_000;
 
+/** Сколько сценариев можно показать на графике сравнения одновременно. */
+export const MAX_COMPARED = 6;
+
 export function newId(): string {
   return crypto.randomUUID();
 }
 
-export function defaultScenario(): Scenario {
-  return {
-    id: newId(),
-    name: 'Основной сценарий',
-    currency: 'BYN',
-    price: 300_000,
-    downPayment: 60_000,
-    productId: null,
-    annualRatePct: 12,
-    termMonths: 240,
-    freeVariable: 'payment',
-    targetPayment: DEFAULT_TARGET_PAYMENT,
-    prepayments: [],
-  };
-}
+// ---------- Конструкторы ----------
 
 export function newAccount(): Account {
   return { id: newId(), name: '', currency: 'BYN', amount: 0, useForDownPayment: true };
 }
 
+export function newApartment(name = 'Квартира'): Apartment {
+  return { id: newId(), name, currency: 'BYN', price: 300_000 };
+}
+
+export function newSavingsPlan(name = 'Все сбережения на взнос'): SavingsPlan {
+  return { id: newId(), name, reserve: 0, reserveCurrency: 'BYN' };
+}
+
+export function newPrepaymentPlan(name = 'План досрочки', currency: Currency = 'BYN'): PrepaymentPlanComponent {
+  return { id: newId(), name, currency, oneOff: [], recurring: [] };
+}
+
 export function newPrepayment(month: number): Prepayment {
   return { id: newId(), month, amount: 10_000, mode: 'reduceTerm' };
+}
+
+export function newRecurring(): Recurring {
+  return { id: newId(), fromMonth: 12, toMonth: 60, everyMonths: 12, amount: 5_000, mode: 'reduceTerm' };
 }
 
 export function newProduct(): CreditProduct {
@@ -119,201 +162,339 @@ export function newProduct(): CreditProduct {
   };
 }
 
-export function defaultState(): AppState {
-  const scenario = defaultScenario();
+export function newScenario(profile: Profile, name: string): Scenario {
   return {
-    version: STATE_VERSION,
-    activeScenarioId: scenario.id,
-    scenarios: [scenario],
+    id: newId(),
+    name,
+    apartmentId: profile.apartments[0]!.id,
+    productId: null,
+    annualRatePct: 12,
+    termMonths: 240,
+    downPayment: { kind: 'manual', amount: 60_000 },
+    prepaymentPlanId: null,
+    freeVariable: 'payment',
+    targetPayment: DEFAULT_TARGET_PAYMENT,
+  };
+}
+
+/** Новый профиль: одна квартира, распределение «всё на взнос», один сценарий. */
+export function newProfile(name: string): Profile {
+  const base: Profile = {
+    id: newId(),
+    name,
     accounts: [],
-    fxRates: { ...DEFAULT_FX_RATES },
-    products: sampleProducts(newId),
-    refinancingRatePct: DEFAULT_REFINANCING_RATE_PCT,
+    apartments: [newApartment()],
+    savingsPlans: [newSavingsPlan()],
+    prepaymentPlans: [],
+    scenarios: [],
+    activeScenarioId: '',
     comparedScenarioIds: [],
   };
+  const scenario = newScenario(base, 'Основной');
+  return { ...base, scenarios: [scenario], activeScenarioId: scenario.id };
 }
 
-/** Сколько сценариев можно показать на графике сравнения одновременно. */
-export const MAX_COMPARED = 6;
-
-/** Новый сценарий с настройками по умолчанию становится активным. */
-export function addScenario(state: AppState): AppState {
-  const scenario = { ...defaultScenario(), name: `Сценарий ${state.scenarios.length + 1}` };
-  return { ...state, scenarios: [...state.scenarios, scenario], activeScenarioId: scenario.id };
-}
-
-/** Копия сценария (с новыми id у досрочных взносов) встаёт сразу после оригинала и становится активной. */
-export function duplicateScenario(state: AppState, id: string): AppState {
-  const index = state.scenarios.findIndex((s) => s.id === id);
-  const source = state.scenarios[index];
-  if (!source) return state;
-  const copy: Scenario = {
-    ...structuredClone(source),
-    id: newId(),
-    name: `${source.name} (копия)`,
-    prepayments: source.prepayments.map((p) => ({ ...p, id: newId() })),
-  };
-  const scenarios = [...state.scenarios];
-  scenarios.splice(index + 1, 0, copy);
-  return { ...state, scenarios, activeScenarioId: copy.id };
-}
-
-/** Удаление сценария. Последний не удаляется. Если удалён активный — активным становится соседний. */
-export function deleteScenario(state: AppState, id: string): AppState {
-  if (state.scenarios.length <= 1) return state;
-  const index = state.scenarios.findIndex((s) => s.id === id);
-  if (index < 0) return state;
-  const scenarios = state.scenarios.filter((s) => s.id !== id);
-  const activeScenarioId =
-    state.activeScenarioId === id ? scenarios[Math.min(index, scenarios.length - 1)]!.id : state.activeScenarioId;
+export function defaultState(): AppState {
+  const profile = newProfile('Я');
   return {
-    ...state,
-    scenarios,
-    activeScenarioId,
-    comparedScenarioIds: state.comparedScenarioIds.filter((x) => x !== id),
+    version: STATE_VERSION,
+    profiles: [profile],
+    activeProfileId: profile.id,
+    products: sampleProducts(newId),
+    fxRates: { ...DEFAULT_FX_RATES },
+    refinancingRatePct: DEFAULT_REFINANCING_RATE_PCT,
   };
 }
 
-/** Включить или выключить сценарий на графике сравнения (не больше MAX_COMPARED). */
-export function toggleCompared(state: AppState, id: string): AppState {
-  const ids = state.comparedScenarioIds;
-  if (ids.includes(id)) return { ...state, comparedScenarioIds: ids.filter((x) => x !== id) };
-  if (ids.length >= MAX_COMPARED) return state;
-  return { ...state, comparedScenarioIds: [...ids, id] };
+// ---------- Поиск ----------
+
+export function activeProfile(state: AppState): Profile {
+  return state.profiles.find((p) => p.id === state.activeProfileId) ?? state.profiles[0]!;
+}
+
+export function activeScenario(profile: Profile): Scenario {
+  return profile.scenarios.find((s) => s.id === profile.activeScenarioId) ?? profile.scenarios[0]!;
 }
 
 export function findProduct(state: AppState, id: string | null): CreditProduct | undefined {
   return id === null ? undefined : state.products.find((p) => p.id === id);
 }
 
-export function activeScenario(state: AppState): Scenario {
-  return state.scenarios.find((s) => s.id === state.activeScenarioId) ?? state.scenarios[0]!;
+export function findApartment(profile: Profile, id: string): Apartment {
+  return profile.apartments.find((a) => a.id === id) ?? profile.apartments[0]!;
 }
+
+/** Номера сценариев (I, II, III…) по позиции в списке профиля, через запятую: в каких сценариях используется компонент. */
+export function scenariosUsing(profile: Profile, uses: (s: Scenario) => boolean): number[] {
+  return profile.scenarios.flatMap((s, i) => (uses(s) ? [i + 1] : []));
+}
+
+// ---------- Операции с профилями ----------
+
+/** Изменить активный профиль. */
+export function updateProfile(state: AppState, patch: (p: Profile) => Profile): AppState {
+  return { ...state, profiles: state.profiles.map((p) => (p.id === state.activeProfileId ? patch(p) : p)) };
+}
+
+export function addProfile(state: AppState, name: string): AppState {
+  const profile = newProfile(name);
+  return { ...state, profiles: [...state.profiles, profile], activeProfileId: profile.id };
+}
+
+/** Последний профиль не удаляется. */
+export function deleteProfile(state: AppState, id: string): AppState {
+  if (state.profiles.length <= 1) return state;
+  const profiles = state.profiles.filter((p) => p.id !== id);
+  const activeProfileId = state.activeProfileId === id ? profiles[0]!.id : state.activeProfileId;
+  return { ...state, profiles, activeProfileId };
+}
+
+// ---------- Операции со сценариями (внутри профиля) ----------
+
+export function addScenario(profile: Profile): Profile {
+  const scenario = newScenario(profile, `Сценарий ${profile.scenarios.length + 1}`);
+  return { ...profile, scenarios: [...profile.scenarios, scenario], activeScenarioId: scenario.id };
+}
+
+/** Копия ссылается на те же компоненты (они общие) и встаёт сразу после оригинала. */
+export function duplicateScenario(profile: Profile, id: string): Profile {
+  const index = profile.scenarios.findIndex((s) => s.id === id);
+  const source = profile.scenarios[index];
+  if (!source) return profile;
+  const copy: Scenario = { ...structuredClone(source), id: newId(), name: `${source.name} (копия)` };
+  const scenarios = [...profile.scenarios];
+  scenarios.splice(index + 1, 0, copy);
+  return { ...profile, scenarios, activeScenarioId: copy.id };
+}
+
+/** Последний сценарий не удаляется. Если удалён активный — активным становится соседний. */
+export function deleteScenario(profile: Profile, id: string): Profile {
+  if (profile.scenarios.length <= 1) return profile;
+  const index = profile.scenarios.findIndex((s) => s.id === id);
+  if (index < 0) return profile;
+  const scenarios = profile.scenarios.filter((s) => s.id !== id);
+  const activeScenarioId =
+    profile.activeScenarioId === id ? scenarios[Math.min(index, scenarios.length - 1)]!.id : profile.activeScenarioId;
+  return { ...profile, scenarios, activeScenarioId, comparedScenarioIds: profile.comparedScenarioIds.filter((x) => x !== id) };
+}
+
+export function toggleCompared(profile: Profile, id: string): Profile {
+  const ids = profile.comparedScenarioIds;
+  if (ids.includes(id)) return { ...profile, comparedScenarioIds: ids.filter((x) => x !== id) };
+  if (ids.length >= MAX_COMPARED) return profile;
+  return { ...profile, comparedScenarioIds: [...ids, id] };
+}
+
+// ---------- Операции с компонентами ----------
+
+type ComponentList = 'apartments' | 'savingsPlans' | 'prepaymentPlans';
+
+/** Компонент, на который ссылается хотя бы один сценарий, удалить нельзя — сначала переключить сценарии. */
+export function componentInUse(profile: Profile, list: ComponentList, id: string): boolean {
+  return profile.scenarios.some((s) =>
+    list === 'apartments'
+      ? s.apartmentId === id
+      : list === 'savingsPlans'
+        ? s.downPayment.kind === 'savings' && s.downPayment.planId === id
+        : s.prepaymentPlanId === id,
+  );
+}
+
+/** Копия компонента с новыми id (в том числе у вложенных взносов). */
+export function copyComponent<T extends { id: string; name: string }>(item: T): T {
+  const copy = structuredClone(item) as T & { oneOff?: Prepayment[]; recurring?: Recurring[] };
+  copy.id = newId();
+  copy.name = `${item.name} (копия)`;
+  if (copy.oneOff) copy.oneOff = copy.oneOff.map((p) => ({ ...p, id: newId() }));
+  if (copy.recurring) copy.recurring = copy.recurring.map((p) => ({ ...p, id: newId() }));
+  return copy;
+}
+
+// ---------- Сохранение и разбор ----------
 
 export function serializeState(state: AppState): string {
   return JSON.stringify(state, null, 2);
 }
 
-type Raw = Record<string, unknown>;
-
-function asObject(raw: unknown, where: string): Raw {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new RangeError(`${where}: ожидался объект`);
-  return raw as Raw;
-}
-
-/** Пустое поле ввода хранится как NaN, а в JSON становится null — читаем null обратно как NaN. */
-function readNumber(raw: Raw, key: string, where: string): number {
-  const value = raw[key];
-  if (value === null) return Number.NaN;
-  if (typeof value !== 'number') throw new RangeError(`${where}: поле «${key}» должно быть числом`);
-  return value;
-}
-
-function readId(raw: Raw, where: string): string {
-  if (typeof raw.id !== 'string' || raw.id === '') throw new RangeError(`${where}: нет поля «id»`);
-  return raw.id;
-}
-
-function readCurrency(raw: Raw, where: string): Currency {
-  const value = raw.currency;
-  if (!CURRENCIES.includes(value as Currency)) {
-    throw new RangeError(`${where}: неизвестная валюта «${String(value)}» (допустимы ${CURRENCIES.join(', ')})`);
-  }
-  return value as Currency;
-}
-
-function parseScenario(raw: unknown, index: number, version: number): Scenario {
-  const where = `Сценарий №${index + 1}`;
-  const r = asObject(raw, where);
-  return {
-    id: readId(r, where),
-    name: typeof r.name === 'string' ? r.name : '',
-    // В версии 1 валюты не было — всё считалось в BYN.
-    currency: version >= 2 ? readCurrency(r, where) : 'BYN',
-    price: readNumber(r, 'price', where),
-    downPayment: readNumber(r, 'downPayment', where),
-    productId: version >= 3 && typeof r.productId === 'string' ? r.productId : null,
-    annualRatePct: readNumber(r, 'annualRatePct', where),
-    termMonths: readNumber(r, 'termMonths', where),
-    // До версии 4 решателя не было — платёж вычислялся, остальное было задано.
-    freeVariable: version >= 4 ? readFreeVariable(r, where) : 'payment',
-    targetPayment: version >= 4 ? readNumber(r, 'targetPayment', where) : DEFAULT_TARGET_PAYMENT,
-    prepayments: version >= 5 ? readPrepayments(r, where) : [],
-  };
-}
-
-function readPrepayments(raw: Raw, where: string): Prepayment[] {
-  if (!Array.isArray(raw.prepayments)) throw new RangeError(`${where}: нет списка досрочных взносов («prepayments»)`);
-  const items = raw.prepayments.map((item, i): Prepayment => {
-    const w = `${where}, досрочный взнос №${i + 1}`;
-    const r = asObject(item, w);
-    if (r.mode !== 'reduceTerm' && r.mode !== 'reducePayment') throw new RangeError(`${w}: неизвестный режим «${String(r.mode)}»`);
-    return { id: readId(r, w), month: readNumber(r, 'month', w), amount: readNumber(r, 'amount', w), mode: r.mode };
+/** Перенос «плоских» данных версий 1–6 в профиль «Я»: у каждого сценария появляются свои компоненты. */
+export function migrateLegacy(legacy: LegacyState): AppState {
+  const apartments: Apartment[] = [];
+  const prepaymentPlans: PrepaymentPlanComponent[] = [];
+  const scenarios: Scenario[] = legacy.scenarios.map((s, i) => {
+    // Одинаковые квартиры (валюта + цена) склеиваем в один компонент.
+    let apartment = apartments.find((a) => a.currency === s.currency && a.price === s.price);
+    if (!apartment) {
+      apartment = { id: newId(), name: `Квартира ${apartments.length + 1}`, currency: s.currency, price: s.price };
+      apartments.push(apartment);
+    }
+    let prepaymentPlanId: string | null = null;
+    if (s.prepayments.length > 0) {
+      const plan: PrepaymentPlanComponent = {
+        ...newPrepaymentPlan(`Досрочка: ${s.name || `сценарий ${i + 1}`}`, s.currency),
+        oneOff: s.prepayments.map((p) => ({ ...p })),
+      };
+      prepaymentPlans.push(plan);
+      prepaymentPlanId = plan.id;
+    }
+    return {
+      id: s.id,
+      name: s.name,
+      apartmentId: apartment.id,
+      productId: s.productId,
+      annualRatePct: s.annualRatePct,
+      termMonths: s.termMonths,
+      downPayment: { kind: 'manual', amount: s.downPayment },
+      prepaymentPlanId,
+      freeVariable: s.freeVariable,
+      targetPayment: s.targetPayment,
+    };
   });
-  uniqueIds(items, 'досрочных взносов');
-  return items;
-}
-
-function readFreeVariable(raw: Raw, where: string): FreeVariable {
-  const value = raw.freeVariable;
-  if (!FREE_VARIABLES.includes(value as FreeVariable)) {
-    throw new RangeError(`${where}: неизвестная вычисляемая величина «${String(value)}»`);
-  }
-  return value as FreeVariable;
-}
-
-function parseAccount(raw: unknown, index: number): Account {
-  const where = `Счёт №${index + 1}`;
-  const r = asObject(raw, where);
+  const profile: Profile = {
+    id: newId(),
+    name: 'Я',
+    accounts: legacy.accounts,
+    apartments,
+    savingsPlans: [newSavingsPlan()],
+    prepaymentPlans,
+    scenarios,
+    activeScenarioId: legacy.activeScenarioId,
+    comparedScenarioIds: legacy.comparedScenarioIds,
+  };
   return {
-    id: readId(r, where),
-    name: typeof r.name === 'string' ? r.name : '',
-    currency: readCurrency(r, where),
-    amount: readNumber(r, 'amount', where),
-    useForDownPayment: r.useForDownPayment !== false,
+    version: STATE_VERSION,
+    profiles: [profile],
+    activeProfileId: profile.id,
+    products: legacy.products,
+    fxRates: legacy.fxRates,
+    refinancingRatePct: legacy.refinancingRatePct,
   };
 }
 
-function readString(raw: Raw, key: string): string {
-  return typeof raw[key] === 'string' ? (raw[key] as string) : '';
-}
-
-function parseRatePeriod(raw: unknown, index: number, where: string): RatePeriod {
-  const w = `${where}, период ставки №${index + 1}`;
+function parseApartment(raw: unknown, index: number, where: string): Apartment {
+  const w = `${where}, квартира №${index + 1}`;
   const r = asObject(raw, w);
-  const rate = asObject(r.rate, w);
-  const fromMonth = readNumber(r, 'fromMonth', w);
-  if (rate.kind === 'fixed') return { fromMonth, rate: { kind: 'fixed', ratePct: readNumber(rate, 'ratePct', w) } };
-  if (rate.kind === 'refinancing') {
-    return { fromMonth, rate: { kind: 'refinancing', marginPct: readNumber(rate, 'marginPct', w) } };
-  }
-  throw new RangeError(`${w}: неизвестный тип ставки «${String(rate.kind)}»`);
+  return { id: readId(r, w), name: readString(r, 'name'), currency: readCurrency(r, w), price: readNumber(r, 'price', w) };
 }
 
-function parseProduct(raw: unknown, index: number): CreditProduct {
-  const where = `Карточка банка №${index + 1}`;
+function parseSavingsPlan(raw: unknown, index: number, where: string): SavingsPlan {
+  const w = `${where}, распределение сбережений №${index + 1}`;
+  const r = asObject(raw, w);
+  return {
+    id: readId(r, w),
+    name: readString(r, 'name'),
+    reserve: readNumber(r, 'reserve', w),
+    reserveCurrency: readCurrency(r, w, 'reserveCurrency'),
+  };
+}
+
+function parsePrepaymentPlan(raw: unknown, index: number, where: string): PrepaymentPlanComponent {
+  const w = `${where}, план досрочки №${index + 1}`;
+  const r = asObject(raw, w);
+  const oneOff = asArray(r, 'oneOff', w).map((item, i): Prepayment => {
+    const iw = `${w}, взнос №${i + 1}`;
+    const x = asObject(item, iw);
+    return { id: readId(x, iw), month: readNumber(x, 'month', iw), amount: readNumber(x, 'amount', iw), mode: readMode(x, iw) };
+  });
+  const recurring = asArray(r, 'recurring', w).map((item, i): Recurring => {
+    const iw = `${w}, повторяющийся взнос №${i + 1}`;
+    const x = asObject(item, iw);
+    return {
+      id: readId(x, iw),
+      fromMonth: readNumber(x, 'fromMonth', iw),
+      toMonth: readNumber(x, 'toMonth', iw),
+      everyMonths: readNumber(x, 'everyMonths', iw),
+      amount: readNumber(x, 'amount', iw),
+      mode: readMode(x, iw),
+    };
+  });
+  uniqueIds([...oneOff, ...recurring], 'досрочных взносов');
+  return { id: readId(r, w), name: readString(r, 'name'), currency: readCurrency(r, w), oneOff, recurring };
+}
+
+function parseDownPayment(raw: unknown, where: string): DownPaymentSource {
+  const r = asObject(raw, `${where}, первый взнос`);
+  if (r.kind === 'savings' && typeof r.planId === 'string') return { kind: 'savings', planId: r.planId };
+  if (r.kind === 'manual') return { kind: 'manual', amount: readNumber(r, 'amount', where) };
+  throw new RangeError(`${where}: неизвестный источник первого взноса`);
+}
+
+function parseScenario(raw: unknown, index: number, where: string): Scenario {
+  const w = `${where}, сценарий №${index + 1}`;
+  const r = asObject(raw, w);
+  return {
+    id: readId(r, w),
+    name: readString(r, 'name'),
+    apartmentId: readString(r, 'apartmentId'),
+    productId: typeof r.productId === 'string' ? r.productId : null,
+    annualRatePct: readNumber(r, 'annualRatePct', w),
+    termMonths: readNumber(r, 'termMonths', w),
+    downPayment: parseDownPayment(r.downPayment, w),
+    prepaymentPlanId: typeof r.prepaymentPlanId === 'string' ? r.prepaymentPlanId : null,
+    freeVariable: readFreeVariable(r, w),
+    targetPayment: readNumber(r, 'targetPayment', w),
+  };
+}
+
+function parseProfile(raw: unknown, index: number, productIds: Set<string>): Profile {
+  const where = `Профиль №${index + 1}`;
   const r = asObject(raw, where);
-  if (!Array.isArray(r.ratePeriods)) throw new RangeError(`${where}: нет списка ставок («ratePeriods»)`);
+  const accounts = asArray(r, 'accounts', where).map(parseAccount);
+  uniqueIds(accounts, 'счетов');
+  const apartments = asArray(r, 'apartments', where).map((x, i) => parseApartment(x, i, where));
+  if (apartments.length === 0) throw new RangeError(`${where}: нет ни одной квартиры`);
+  const savingsPlans = asArray(r, 'savingsPlans', where).map((x, i) => parseSavingsPlan(x, i, where));
+  const prepaymentPlans = asArray(r, 'prepaymentPlans', where).map((x, i) => parsePrepaymentPlan(x, i, where));
+  const scenarios = asArray(r, 'scenarios', where).map((x, i) => parseScenario(x, i, where));
+  if (scenarios.length === 0) throw new RangeError(`${where}: нет ни одного сценария`);
+  uniqueIds(apartments, 'квартир');
+  uniqueIds(savingsPlans, 'распределений сбережений');
+  uniqueIds(prepaymentPlans, 'планов досрочки');
+  const scenarioIds = uniqueIds(scenarios, 'сценариев');
+
+  // Битые ссылки не ломают загрузку: подставляем безопасные значения.
+  const apartmentIds = new Set(apartments.map((a) => a.id));
+  const savingsIds = new Set(savingsPlans.map((p) => p.id));
+  const planIds = new Set(prepaymentPlans.map((p) => p.id));
+  for (const s of scenarios) {
+    if (!apartmentIds.has(s.apartmentId)) s.apartmentId = apartments[0]!.id;
+    if (s.productId !== null && !productIds.has(s.productId)) s.productId = null;
+    if (s.downPayment.kind === 'savings' && !savingsIds.has(s.downPayment.planId)) s.downPayment = { kind: 'manual', amount: 0 };
+    if (s.prepaymentPlanId !== null && !planIds.has(s.prepaymentPlanId)) s.prepaymentPlanId = null;
+  }
+  const activeScenarioId = typeof r.activeScenarioId === 'string' && scenarioIds.has(r.activeScenarioId)
+    ? r.activeScenarioId
+    : scenarios[0]!.id;
+  const comparedScenarioIds = Array.isArray(r.comparedScenarioIds)
+    ? r.comparedScenarioIds.filter((x): x is string => typeof x === 'string' && scenarioIds.has(x)).slice(0, MAX_COMPARED)
+    : [];
   return {
     id: readId(r, where),
     name: readString(r, 'name'),
-    ratePeriods: r.ratePeriods.map((p, i) => parseRatePeriod(p, i, where)),
-    interestOnlyMonths: readNumber(r, 'interestOnlyMonths', where),
-    prepaymentBanMonths: readNumber(r, 'prepaymentBanMonths', where),
-    maxTermMonths: readNumber(r, 'maxTermMonths', where),
-    minDownPct: readNumber(r, 'minDownPct', where),
-    maxLoan: r.maxLoan === null || r.maxLoan === undefined ? null : readNumber(r, 'maxLoan', where),
-    notes: readString(r, 'notes'),
-    source: readString(r, 'source'),
-    checkedAt: readString(r, 'checkedAt'),
-    verified: r.verified === true,
+    accounts,
+    apartments,
+    savingsPlans,
+    prepaymentPlans,
+    scenarios,
+    activeScenarioId,
+    comparedScenarioIds,
   };
 }
 
-function uniqueIds(items: { id: string }[], what: string): Set<string> {
-  const ids = new Set(items.map((i) => i.id));
-  if (ids.size !== items.length) throw new RangeError(`У ${what} повторяются id`);
-  return ids;
+function parseCurrent(r: Raw): AppState {
+  const products = asArray(r, 'products', 'Данные калькулятора').map(parseProduct);
+  const productIds = uniqueIds(products, 'карточек банков');
+  const profiles = asArray(r, 'profiles', 'Данные калькулятора').map((p, i) => parseProfile(p, i, productIds));
+  if (profiles.length === 0) throw new RangeError('В данных нет ни одного профиля');
+  const profileIds = uniqueIds(profiles, 'профилей');
+  const rates = asObject(r.fxRates, 'Курсы валют');
+  return {
+    version: STATE_VERSION,
+    profiles,
+    activeProfileId: typeof r.activeProfileId === 'string' && profileIds.has(r.activeProfileId) ? r.activeProfileId : profiles[0]!.id,
+    products,
+    fxRates: { USD: readNumber(rates, 'USD', 'Курсы валют'), EUR: readNumber(rates, 'EUR', 'Курсы валют') },
+    refinancingRatePct: readNumber(r, 'refinancingRatePct', 'Данные калькулятора'),
+  };
 }
 
 /** Разбирает JSON из localStorage или из файла, поднимая старые версии до текущей. Бросает RangeError с понятным текстом. */
@@ -329,54 +510,47 @@ export function parseState(json: string): AppState {
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 1 || version > STATE_VERSION) {
     throw new RangeError(`Неизвестная версия данных: ${String(version)} (поддерживаются 1–${STATE_VERSION})`);
   }
-  if (!Array.isArray(r.scenarios) || r.scenarios.length === 0) {
-    throw new RangeError('В данных нет ни одного сценария');
+  if (version <= LEGACY_VERSION) {
+    return migrateLegacy(
+      parseLegacy(r, version, {
+        fxRates: DEFAULT_FX_RATES,
+        refinancingRatePct: DEFAULT_REFINANCING_RATE_PCT,
+        targetPayment: DEFAULT_TARGET_PAYMENT,
+        maxCompared: MAX_COMPARED,
+        sampleProducts: () => sampleProducts(newId),
+      }),
+    );
   }
-  const scenarios = r.scenarios.map((s, i) => parseScenario(s, i, version));
-  const scenarioIds = uniqueIds(scenarios, 'сценариев');
+  return parseCurrent(r);
+}
 
-  let accounts: Account[] = [];
-  let fxRates: FxRates = { ...DEFAULT_FX_RATES };
-  if (version >= 2) {
-    if (!Array.isArray(r.accounts)) throw new RangeError('Нет списка счетов («accounts»)');
-    accounts = r.accounts.map(parseAccount);
-    uniqueIds(accounts, 'счетов');
-    const rates = asObject(r.fxRates, 'Курсы валют');
-    fxRates = { USD: readNumber(rates, 'USD', 'Курсы валют'), EUR: readNumber(rates, 'EUR', 'Курсы валют') };
+/**
+ * Смена валюты квартиры: цена пересчитывается по курсу, а в сценариях с этой квартирой — и суммы в валюте сделки
+ * («платёж не больше», свой первый взнос). Без курса — валюта меняется без пересчёта.
+ */
+export function changeApartmentCurrency(state: AppState, apartmentId: string, to: Currency): AppState {
+  const profile = activeProfile(state);
+  const apartment = profile.apartments.find((a) => a.id === apartmentId);
+  if (!apartment || apartment.currency === to) return state;
+  const from = apartment.currency;
+  let conv: (n: number) => number;
+  try {
+    convert(1, from, to, state.fxRates);
+    conv = (n) => Math.round(convert(n, from, to, state.fxRates) * 100) / 100;
+  } catch {
+    conv = (n) => n;
   }
-
-  let products: CreditProduct[];
-  let refinancingRatePct = DEFAULT_REFINANCING_RATE_PCT;
-  if (version >= 3) {
-    if (!Array.isArray(r.products)) throw new RangeError('Нет списка карточек банков («products»)');
-    products = r.products.map(parseProduct);
-    uniqueIds(products, 'карточек банков');
-    refinancingRatePct = readNumber(r, 'refinancingRatePct', 'Данные калькулятора');
-  } else {
-    // До версии 3 карточек не было — даём стартовые примеры из исследования.
-    products = sampleProducts(newId);
-  }
-  const productIds = new Set(products.map((p) => p.id));
-  // Ссылка на удалённую карточку → ручной режим, а не ошибка.
-  for (const scenario of scenarios) {
-    if (scenario.productId !== null && !productIds.has(scenario.productId)) scenario.productId = null;
-  }
-
-  const activeScenarioId =
-    typeof r.activeScenarioId === 'string' && scenarioIds.has(r.activeScenarioId) ? r.activeScenarioId : scenarios[0]!.id;
-  // Несуществующие сценарии в сравнении просто отбрасываем.
-  const comparedScenarioIds =
-    version >= 6 && Array.isArray(r.comparedScenarioIds)
-      ? r.comparedScenarioIds.filter((x): x is string => typeof x === 'string' && scenarioIds.has(x)).slice(0, MAX_COMPARED)
-      : [];
-  return {
-    version: STATE_VERSION,
-    activeScenarioId,
-    scenarios,
-    accounts,
-    fxRates,
-    products,
-    refinancingRatePct,
-    comparedScenarioIds,
-  };
+  return updateProfile(state, (p) => ({
+    ...p,
+    apartments: p.apartments.map((a) => (a.id === apartmentId ? { ...a, currency: to, price: conv(a.price) } : a)),
+    scenarios: p.scenarios.map((s) =>
+      s.apartmentId !== apartmentId
+        ? s
+        : {
+            ...s,
+            targetPayment: conv(s.targetPayment),
+            downPayment: s.downPayment.kind === 'manual' ? { kind: 'manual', amount: conv(s.downPayment.amount) } : s.downPayment,
+          },
+    ),
+  }));
 }
