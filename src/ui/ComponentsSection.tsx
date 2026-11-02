@@ -23,17 +23,31 @@ interface Props {
   highlightIds: Set<string>;
   onProfileChange: (patch: (p: Profile) => Profile) => void;
   onApartmentCurrency: (apartmentId: string, to: Currency) => void;
+  /** Клик по номеру сценария — перейти к нему. */
+  onSelectScenario: (index: number) => void;
 }
 
 type ListKey = 'apartments' | 'savingsPlans' | 'prepaymentPlans';
 
-/** «I, III» — в каких сценариях используется компонент. */
-function UsedIn({ numbers }: { numbers: number[] }) {
+/** «I, III» — в каких сценариях используется компонент; номер — ссылка на сценарий. */
+function UsedIn({ numbers, onSelect }: { numbers: number[]; onSelect: (index: number) => void }) {
   if (numbers.length === 0) return <span className="used-in muted">не используется</span>;
-  return <span className="used-in">в сценариях {numbers.map(toRoman).join(', ')}</span>;
+  return (
+    <span className="used-in">
+      в сценариях{' '}
+      {numbers.map((n, i) => (
+        <span key={n}>
+          {i > 0 && ', '}
+          <button type="button" className="roman roman-link" title="Перейти к сценарию"
+            onClick={(e) => { e.preventDefault(); onSelect(n - 1); }}>{toRoman(n)}</button>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 interface CardProps {
+  onSelectScenario: (index: number) => void;
   title: string;
   used: number[];
   highlighted: boolean;
@@ -43,12 +57,12 @@ interface CardProps {
   children: ReactNode;
 }
 
-function ComponentCard({ title, used, highlighted, canDelete, onCopy, onDelete, children }: CardProps) {
+function ComponentCard({ title, used, highlighted, canDelete, onCopy, onDelete, children, onSelectScenario }: CardProps) {
   return (
     <details className={`product component${highlighted ? ' highlighted' : ''}`} open={highlighted || undefined}>
       <summary>
         <strong>{title || 'Без названия'}</strong>
-        <UsedIn numbers={used} />
+        <UsedIn numbers={used} onSelect={onSelectScenario} />
       </summary>
       <div className="product-editor">{children}</div>
       <div className="product-actions">
@@ -64,7 +78,7 @@ function ComponentCard({ title, used, highlighted, canDelete, onCopy, onDelete, 
  * Компоненты профиля: квартиры, распределения сбережений, планы досрочки.
  * Они общие: правка меняет все сценарии, где компонент выбран.
  */
-export function ComponentsSection({ profile, highlightIds, onProfileChange, onApartmentCurrency }: Props) {
+export function ComponentsSection({ profile, highlightIds, onProfileChange, onApartmentCurrency, onSelectScenario }: Props) {
   function updateItem<K extends ListKey>(list: K, id: string, patch: Partial<Profile[K][number]>) {
     onProfileChange((p) => ({ ...p, [list]: (p[list] as { id: string }[]).map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
   }
@@ -76,6 +90,7 @@ export function ComponentsSection({ profile, highlightIds, onProfileChange, onAp
     onProfileChange((p) => ({ ...p, [list]: (p[list] as { id: string }[]).filter((x) => x.id !== id) }));
   }
   const cardProps = <T extends { id: string; name: string }>(list: ListKey, item: T, uses: (s: Profile['scenarios'][number]) => boolean) => ({
+    onSelectScenario,
     title: item.name,
     used: scenariosUsing(profile, uses),
     highlighted: highlightIds.has(item.id),
@@ -101,7 +116,7 @@ export function ComponentsSection({ profile, highlightIds, onProfileChange, onAp
                 <input type="text" value={a.name} onChange={(e) => updateItem('apartments', a.id, { name: e.target.value })} /></label>
               <label className="field"><span>Валюта сделки</span>
                 <CurrencySelect label={`Валюта: ${a.name}`} value={a.currency} onChange={(to) => onApartmentCurrency(a.id, to)} /></label>
-              <NumberField label={`Цена, ${a.currency}`} value={a.price} step={1000}
+              <NumberField label={`Цена, ${a.currency}`} value={a.price} step={1000} currency={a.currency}
                 onChange={(price) => updateItem('apartments', a.id, { price })} />
             </div>
           </ComponentCard>
@@ -118,7 +133,7 @@ export function ComponentsSection({ profile, highlightIds, onProfileChange, onAp
             <div className="fields">
               <label className="field"><span>Название</span>
                 <input type="text" value={sp.name} onChange={(e) => updateItem('savingsPlans', sp.id, { name: e.target.value })} /></label>
-              <NumberField label={`Оставить в резерве, ${sp.reserveCurrency}`} value={sp.reserve} step={1000}
+              <NumberField label={`Оставить в резерве, ${sp.reserveCurrency}`} value={sp.reserve} step={1000} currency={sp.reserveCurrency}
                 onChange={(reserve) => updateItem('savingsPlans', sp.id, { reserve })} />
               <label className="field"><span>Валюта резерва</span>
                 <CurrencySelect label={`Валюта резерва: ${sp.name}`} value={sp.reserveCurrency}

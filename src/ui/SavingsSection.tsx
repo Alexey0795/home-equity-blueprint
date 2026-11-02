@@ -1,7 +1,7 @@
 import { gapToDownPayment, type Account, type Currency, type FxRates, type SavingsSummary } from '../domain';
 import { newAccount } from '../state/appState';
 import { CurrencySelect } from './CurrencySelect';
-import { formatMoney } from './format';
+import { Money } from './Money';
 import { NumberField } from './NumberField';
 
 interface Props {
@@ -47,7 +47,7 @@ export function SavingsSection(props: Props) {
                     placeholder="Например, «Наличные дома»" onChange={(e) => updateAccount(a.id, { name: e.target.value })} />
                 </td>
                 <td>
-                  <NumberField bare label={`Сумма счёта ${i + 1}`} value={a.amount} step={100}
+                  <NumberField bare label={`Сумма счёта ${i + 1}`} value={a.amount} step={100} currency={a.currency}
                     onChange={(amount) => updateAccount(a.id, { amount })} />
                 </td>
                 <td>
@@ -102,14 +102,14 @@ function DownPaymentProgress({ summary, downPayment, reserve, currency }: Progre
   return (
     <div className="savings-summary">
       <div className="summary">
-        <div><span>Всего сбережений</span><strong>{formatMoney(summary.total, currency)}</strong></div>
-        <div><span>Можно направить на взнос</span><strong>{formatMoney(summary.availableForDown, currency)}</strong></div>
-        {reserve > 0 && <div><span>Из них в резерве</span><strong>{formatMoney(reserve, currency)}</strong></div>}
-        <div><span>Первый взнос сценария</span><strong>{Number.isFinite(downPayment) ? formatMoney(downPayment, currency) : '—'}</strong></div>
+        <div><span>Всего сбережений</span><strong><Money value={summary.total} currency={currency} /></strong></div>
+        <div><span>Можно направить на взнос</span><strong><Money value={summary.availableForDown} currency={currency} /></strong></div>
+        {reserve > 0 && <div><span>Из них в резерве</span><strong><Money value={reserve} currency={currency} /></strong></div>}
+        <div><span>Первый взнос сценария</span><strong><Money value={downPayment} currency={currency} /></strong></div>
         {Number.isFinite(gap) && (gap > 0 ? (
-          <div><span>Не хватает на взнос</span><strong className="interest">{formatMoney(gap, currency)}</strong></div>
+          <div><span>Не хватает на взнос</span><strong className="interest"><Money value={gap} currency={currency} /></strong></div>
         ) : (
-          <div><span>Остаётся после взноса</span><strong className="ok">{formatMoney(Math.max(0, -gap), currency)}</strong></div>
+          <div><span>Остаётся после взноса</span><strong className="ok"><Money value={Math.max(0, -gap)} currency={currency} /></strong></div>
         ))}
       </div>
       {Number.isFinite(share) && (

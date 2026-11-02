@@ -39,3 +39,18 @@ export function toRoman(n: number): string {
   }
   return out;
 }
+
+const inputFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6, useGrouping: true });
+
+/** Число для поля ввода: 300000 → «300 000», 9.25 → «9,25», NaN → пусто. */
+export function formatNumberInput(n: number): string {
+  // Intl ставит неразрывные пробелы — в поле ввода удобнее обычные.
+  return Number.isFinite(n) ? inputFormat.format(n).replace(/[  ]/g, ' ') : '';
+}
+
+/** Разбор того, что ввёл человек: пробелы между разрядами, запятая или точка как дробный разделитель. Пусто → NaN. */
+export function parseNumberInput(text: string): number {
+  const cleaned = text.replace(/[\s  ]/g, '').replace(',', '.');
+  if (cleaned === '' || cleaned === '-' || !/^-?\d*\.?\d*$/.test(cleaned)) return Number.NaN;
+  return Number(cleaned);
+}

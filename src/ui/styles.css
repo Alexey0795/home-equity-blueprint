@@ -172,3 +172,33 @@ h4 { margin: 12px 0 6px; font-size: 0.9rem; }
 }
 .field.derived small { font-size: 0.75rem; color: #59636e; }
 .recurring input { min-width: 70px; }
+
+/* --- Подсказка «сумма в других валютах» (data-tip) --- */
+[data-tip] { position: relative; }
+.money[data-tip] { cursor: help; text-decoration: underline dotted rgb(0 0 0 / 25%); text-underline-offset: 3px; }
+[data-tip]:hover::after, .money[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute; z-index: 20; left: 0; bottom: calc(100% + 6px);
+  padding: 6px 8px; border-radius: 6px; white-space: pre; pointer-events: none;
+  font: 500 0.8rem/1.4 system-ui, sans-serif; font-variant-numeric: tabular-nums; text-align: left;
+  color: #fff; background: rgb(33 37 41 / 92%); box-shadow: 0 4px 12px rgb(0 0 0 / 18%);
+}
+td [data-tip]:hover::after { left: auto; right: 0; }
+.money-input { display: block; }
+
+/* --- Плавающая панель сценариев --- */
+.scenario-dock {
+  position: fixed; z-index: 30; left: 50%; bottom: 16px; transform: translate(-50%, 24px); opacity: 0; pointer-events: none;
+  display: flex; gap: 4px; padding: 6px; border-radius: 999px; background: #fff; box-shadow: 0 6px 24px rgb(0 0 0 / 18%);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.scenario-dock.visible { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.scenario-dock button {
+  min-width: 40px; height: 36px; border-radius: 999px; font-family: Georgia, 'Times New Roman', serif; font-weight: 700;
+  border: 1px solid transparent; background: transparent; color: #1864ab;
+}
+.scenario-dock button.active { background: #1c7ed6; color: #fff; }
+.roman-link { border: none; cursor: pointer; font-size: 0.8rem; margin-left: 2px; padding: 0 4px; }
+.roman-link:hover { background: #d0ebff; }
+/* В больших таблицах пунктир под каждым числом — шум; подсказка при наведении остаётся. */
+td .money[data-tip] { text-decoration: none; }

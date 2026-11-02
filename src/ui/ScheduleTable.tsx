@@ -1,7 +1,7 @@
-import type { PaymentSchedule } from '../domain';
-import { formatMoney } from './format';
+import type { Currency, PaymentSchedule } from '../domain';
+import { Money } from './Money';
 
-export function ScheduleTable({ schedule }: { schedule: PaymentSchedule }) {
+export function ScheduleTable({ schedule, currency }: { schedule: PaymentSchedule; currency: Currency }) {
   const hasPrepayments = schedule.rows.some((r) => r.prepayment > 0);
   return (
     <div className="table-wrap">
@@ -20,11 +20,11 @@ export function ScheduleTable({ schedule }: { schedule: PaymentSchedule }) {
           {schedule.rows.map((row) => (
             <tr key={row.month}>
               <td>{row.month}</td>
-              <td>{formatMoney(row.payment)}</td>
-              <td>{formatMoney(row.interest)}</td>
-              <td>{formatMoney(row.principal)}</td>
-              {hasPrepayments && <td className={row.prepayment > 0 ? 'prepaid' : ''}>{row.prepayment > 0 ? formatMoney(row.prepayment) : ''}</td>}
-              <td>{formatMoney(row.balance)}</td>
+              <td><Money value={row.payment} currency={currency} showCode={false} /></td>
+              <td><Money value={row.interest} currency={currency} showCode={false} /></td>
+              <td><Money value={row.principal} currency={currency} showCode={false} /></td>
+              {hasPrepayments && <td className={row.prepayment > 0 ? 'prepaid' : ''}>{row.prepayment > 0 ? <Money value={row.prepayment} currency={currency} showCode={false} /> : ''}</td>}
+              <td><Money value={row.balance} currency={currency} showCode={false} /></td>
             </tr>
           ))}
         </tbody>

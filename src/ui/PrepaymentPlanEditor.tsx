@@ -37,7 +37,7 @@ export function PrepaymentPlanEditor({ plan, onChange }: Props) {
               <tr key={p.id}>
                 <td><NumberField bare label={`Разовый взнос ${i + 1}: месяц`} value={p.month} min={1}
                   onChange={(month) => updOne(p.id, { month: Math.round(month) })} /></td>
-                <td><NumberField bare label={`Разовый взнос ${i + 1}: сумма`} value={p.amount} step={1000}
+                <td><NumberField bare label={`Разовый взнос ${i + 1}: сумма`} value={p.amount} step={1000} currency={c}
                   onChange={(amount) => updOne(p.id, { amount })} /></td>
                 <td><ModeSelect label={`Разовый взнос ${i + 1}: что уменьшаем`} value={p.mode} onChange={(mode) => updOne(p.id, { mode })} /></td>
                 <td><button type="button" className="icon" aria-label={`Удалить разовый взнос ${i + 1}`}
@@ -61,7 +61,7 @@ export function PrepaymentPlanEditor({ plan, onChange }: Props) {
               <tr key={p.id}>
                 <td><NumberField bare label={`Повторяющийся ${i + 1}: каждые`} value={p.everyMonths} min={1}
                   onChange={(everyMonths) => updRec(p.id, { everyMonths: Math.round(everyMonths) })} /></td>
-                <td><NumberField bare label={`Повторяющийся ${i + 1}: сумма`} value={p.amount} step={500}
+                <td><NumberField bare label={`Повторяющийся ${i + 1}: сумма`} value={p.amount} step={500} currency={c}
                   onChange={(amount) => updRec(p.id, { amount })} /></td>
                 <td><NumberField bare label={`Повторяющийся ${i + 1}: с месяца`} value={p.fromMonth} min={1}
                   onChange={(fromMonth) => updRec(p.id, { fromMonth: Math.round(fromMonth) })} /></td>

@@ -24,13 +24,15 @@ import { ComponentsSection } from './ui/ComponentsSection';
 import { ComputedField } from './ui/ComputedField';
 import { describeProduct, formatPct } from './ui/describeProduct';
 import { DataFileButtons } from './ui/DataFileButtons';
-import { formatMoney, formatTerm, toRoman } from './ui/format';
+import { formatTerm, toRoman } from './ui/format';
+import { FxContext, Money } from './ui/Money';
 import { FREE_VARIABLE_HINTS, FreeVariablePicker } from './ui/FreeVariablePicker';
 import { NumberField } from './ui/NumberField';
 import { ProductsSection } from './ui/ProductsSection';
 import { ProfileSwitcher } from './ui/ProfileSwitcher';
 import { SavingsSection } from './ui/SavingsSection';
 import { ScenarioBar } from './ui/ScenarioBar';
+import { ScenarioDock } from './ui/ScenarioDock';
 import { ScheduleTable } from './ui/ScheduleTable';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -107,6 +109,7 @@ export function App() {
   const highlightIds = new Set([apartment.id, inputs.savingsPlan?.id ?? '', inputs.prepaymentPlan?.id ?? '']);
 
   return (
+    <FxContext.Provider value={state.fxRates}>
     <main>
       <header className="top">
         <h1>Ипотечный калькулятор</h1>
@@ -123,6 +126,7 @@ export function App() {
         </div>
       </header>
 
+      <div id="scenario-tabs">
       <ScenarioBar
         scenarios={profile.scenarios}
         activeId={scenario.id}
@@ -134,6 +138,9 @@ export function App() {
           if (window.confirm(`Удалить сценарий «${scenario.name}»?`)) setProfile((p) => deleteScenario(p, scenario.id));
         }}
       />
+      </div>
+      <ScenarioDock scenarios={profile.scenarios} activeId={scenario.id} watchId="scenario-tabs"
+        onSelect={(id) => setProfile((p) => ({ ...p, activeScenarioId: id }))} />
 
       <section className="card">
         <div className="scenario-row">
@@ -148,7 +155,7 @@ export function App() {
 
         <div className="fields">
           {free !== 'payment' && (
-            <NumberField label={`Платёж не больше, ${currency}`} value={scenario.targetPayment}
+            <NumberField label={`Платёж не больше, ${currency}`} value={scenario.targetPayment} currency={currency}
               onChange={(targetPayment) => update({ targetPayment })} step={50} />
           )}
 
@@ -162,9 +169,9 @@ export function App() {
             {apartmentShared && <small className="muted">{apartmentShared}</small>}
           </div>
           {free === 'price' ? (
-            <ComputedField label={`Цена квартиры, ${currency}`} value={'error' in result ? '—' : formatMoney(deal.price)} />
+            <ComputedField label={`Цена квартиры, ${currency}`} money={'error' in result ? undefined : { value: deal.price, currency }} value="—" />
           ) : (
-            <NumberField label={`Цена квартиры, ${currency}`} value={apartment.price} step={1000}
+            <NumberField label={`Цена квартиры, ${currency}`} value={apartment.price} step={1000} currency={currency}
               onChange={(price) => setProfile((p) => ({ ...p, apartments: p.apartments.map((a) => (a.id === apartment.id ? { ...a, price } : a)) }))} />
           )}
 
@@ -181,15 +188,15 @@ export function App() {
             </select>
           </label>
           {free === 'downPayment' ? (
-            <ComputedField label={`Первый взнос, ${currency}`} value={'error' in result ? '—' : formatMoney(deal.downPayment)} />
+            <ComputedField label={`Первый взнос, ${currency}`} money={'error' in result ? undefined : { value: deal.downPayment, currency }} value="—" />
           ) : scenario.downPayment.kind === 'manual' ? (
-            <NumberField label={`Первый взнос, ${currency}`} value={scenario.downPayment.amount} step={1000}
+            <NumberField label={`Первый взнос, ${currency}`} value={scenario.downPayment.amount} step={1000} currency={currency}
               onChange={(amount) => update({ downPayment: { kind: 'manual', amount } })} />
           ) : (
             <div className="field derived">
               <span>Первый взнос, {currency}</span>
-              <output>{Number.isFinite(inputs.downPayment) ? formatMoney(inputs.downPayment) : '—'}</output>
-              {inputs.reserve > 0 && <small>сбережения минус резерв {formatMoney(inputs.reserve, currency)}</small>}
+              <output><Money value={inputs.downPayment} currency={currency} showCode={false} /></output>
+              {inputs.reserve > 0 && <small>сбережения минус резерв <Money value={inputs.reserve} currency={currency} /></small>}
             </div>
           )}
 
@@ -254,16 +261,16 @@ export function App() {
       {'error' in result ? null : (
         <>
           <section className="card summary">
-            <div><span>Сумма кредита</span><strong>{formatMoney(loan, currency)}</strong></div>
+            <div><span>Сумма кредита</span><strong><Money value={loan} currency={currency} /></strong></div>
             <div>
               <span>Ежемесячный платёж</span>
               {result.phases.length === 1 ? (
-                <strong>{formatMoney(result.schedule.monthlyPayment, currency)}</strong>
+                <strong><Money value={result.schedule.monthlyPayment} currency={currency} /></strong>
               ) : (
                 <ul className="phases">
                   {result.phases.slice(0, MAX_PHASES).map((ph) => (
                     <li key={ph.fromMonth}>
-                      <strong>{formatMoney(ph.payment, currency)}</strong>
+                      <strong><Money value={ph.payment} currency={currency} /></strong>
                       <span>{ph.fromMonth === ph.toMonth ? `мес. ${ph.fromMonth}` : `мес. ${ph.fromMonth}–${ph.toMonth}`}</span>
                     </li>
                   ))}
@@ -273,11 +280,11 @@ export function App() {
                 </ul>
               )}
             </div>
-            <div><span>Переплата по процентам</span><strong className="interest">{formatMoney(result.schedule.totalInterest, currency)}</strong></div>
-            <div><span>Всего выплат</span><strong>{formatMoney(result.schedule.totalPaid, currency)}</strong></div>
+            <div><span>Переплата по процентам</span><strong className="interest"><Money value={result.schedule.totalInterest} currency={currency} /></strong></div>
+            <div><span>Всего выплат</span><strong><Money value={result.schedule.totalPaid} currency={currency} /></strong></div>
             {inputs.prepayments.length > 0 && (
               <>
-                <div><span>Экономия от досрочки</span><strong className="ok">{formatMoney(result.effect.interestSaved, currency)}</strong></div>
+                <div><span>Экономия от досрочки</span><strong className="ok"><Money value={result.effect.interestSaved} currency={currency} /></strong></div>
                 <div><span>Кредит закроется через</span><strong>{formatTerm(result.schedule.rows.length)}</strong></div>
               </>
             )}
@@ -312,7 +319,7 @@ export function App() {
           </section>
           <section className="card">
             <h2>График платежей по месяцам</h2>
-            <ScheduleTable schedule={result.schedule} />
+            <ScheduleTable schedule={result.schedule} currency={currency} />
           </section>
         </>
       )}
@@ -323,6 +330,10 @@ export function App() {
           highlightIds={highlightIds}
           onProfileChange={setProfile}
           onApartmentCurrency={(id, to) => setState((s) => changeApartmentCurrency(s, id, to))}
+          onSelectScenario={(index) => {
+            const target = profile.scenarios[index];
+            if (target) setProfile((p) => ({ ...p, activeScenarioId: target.id }));
+          }}
         />
       </div>
 
@@ -356,5 +367,6 @@ export function App() {
         onRefinancingChange={(refinancingRatePct) => setState((s) => ({ ...s, refinancingRatePct }))}
       />
     </main>
+    </FxContext.Provider>
   );
 }

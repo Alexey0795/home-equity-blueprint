@@ -4,6 +4,7 @@ import { MAX_COMPARED, type AppState, type Profile } from '../state/appState';
 import type { ScenarioEvaluation } from '../state/evaluate';
 import { COLORS, scenarioColor } from './charts/colors';
 import { formatCompact, formatMoney, formatTerm, toRoman } from './format';
+import { Money } from './Money';
 
 interface Props {
   state: AppState;
@@ -116,10 +117,10 @@ export function ComparisonSection({ state, profile, evaluations, currency, onTog
                 <td className="terms">{r.terms}</td>
                 {r.values ? (
                   <>
-                    <td>{formatMoney(r.values.price)}</td>
-                    <td>{formatMoney(r.values.loan)}</td>
-                    <td>{formatMoney(r.values.maxPayment)}</td>
-                    <td>{formatMoney(r.values.interest)}</td>
+                    <td><Money value={r.values.price} currency={currency} showCode={false} /></td>
+                    <td><Money value={r.values.loan} currency={currency} showCode={false} /></td>
+                    <td><Money value={r.values.maxPayment} currency={currency} showCode={false} /></td>
+                    <td><Money value={r.values.interest} currency={currency} showCode={false} /></td>
                     <td>{formatTerm(r.values.months)}</td>
                   </>
                 ) : (
