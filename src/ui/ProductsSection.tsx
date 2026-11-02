@@ -1,5 +1,6 @@
 import type { CreditProduct, RatePeriod, RateSpec } from '../domain';
 import { newId, newProduct } from '../state/appState';
+import { missingSampleProducts } from '../state/sampleProducts';
 import { describeProduct } from './describeProduct';
 import { NumberField } from './NumberField';
 
@@ -54,7 +55,15 @@ export function ProductsSection({ products, refinancingRatePct, usedIds, onProdu
           </details>
         ))}
       </div>
-      <button type="button" onClick={() => onProductsChange([...products, newProduct()])}>+ Добавить карточку</button>
+      <div className="product-actions">
+        <button type="button" onClick={() => onProductsChange([...products, newProduct()])}>+ Добавить карточку</button>
+        {missingSampleProducts(products, newId).length > 0 && (
+          <button type="button" title="Карточки из проверки условий банков 02.11.2026 (docs/research), которых ещё нет в списке"
+            onClick={() => onProductsChange([...products, ...missingSampleProducts(products, newId)])}>
+            + Добавить карточки из исследования
+          </button>
+        )}
+      </div>
     </section>
   );
 }

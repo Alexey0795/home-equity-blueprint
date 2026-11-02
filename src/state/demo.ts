@@ -8,16 +8,19 @@ import {
   type Profile,
   type Scenario,
 } from './appState';
-import { sampleProducts } from './sampleProducts';
+import { SAMPLE, sampleProducts } from './sampleProducts';
 
 /**
  * Демо для первого запуска и для гостя по ссылке: одна квартира, одни сбережения, три банка.
- * Показывает главное: «0,99%», «1%» и «14,9%» на глаз не сравнить — сравнивать надо горы переплаты и самый большой платёж.
- * Все суммы вымышленные.
+ * Показывает главное: «0,99%», «1%» и «12%» на глаз не сравнить — сравнивать надо горы переплаты и самый большой платёж.
+ * Все суммы вымышленные; условия банков — из исследования (карточки sampleProducts).
  */
 export function demoState(): AppState {
   const products = sampleProducts(newId);
-  const [belinvest, belarusbank, sber] = products as [typeof products[0], typeof products[0], typeof products[0]];
+  const byName = (name: string) => products.find((p) => p.name === name)!;
+  const express = byName(SAMPLE.belarusbankExpress);
+  const partners = byName(SAMPLE.belarusbankPartners);
+  const sber = byName(SAMPLE.sber);
   const apartment = { id: newId(), name: 'Двушка в Минске (пример)', currency: 'BYN' as const, price: 250_000 };
   const allIn = newSavingsPlan('Все сбережения на взнос');
   const reserve = { ...newSavingsPlan('Резерв 5 000 USD на чёрный день'), reserve: 5_000, reserveCurrency: 'USD' as const };
@@ -43,10 +46,10 @@ export function demoState(): AppState {
     ...patch,
   });
   const scenarios = [
-    scenario('Простой: 14,9% весь срок', belinvest.id),
-    scenario('«1%» на два года', belarusbank.id),
+    scenario('Простой: «Ипотека Экспресс»', express.id),
+    scenario('«1%» на два года', partners.id),
     scenario('Промо 0,99%', sber.id),
-    scenario('Простой + резерв и досрочка', belinvest.id, {
+    scenario('Простой + резерв и досрочка', express.id, {
       downPayment: { kind: 'savings', planId: reserve.id },
       prepaymentPlanId: gradual.id,
     }),
