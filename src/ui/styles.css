@@ -202,3 +202,11 @@ td [data-tip]:hover::after { left: auto; right: 0; }
 .roman-link:hover { background: #d0ebff; }
 /* В больших таблицах пунктир под каждым числом — шум; подсказка при наведении остаётся. */
 td .money[data-tip] { text-decoration: none; }
+
+/* --- Приветствие для гостя --- */
+.welcome { margin-bottom: 16px; padding: 16px 20px; border-radius: 10px; background: linear-gradient(135deg, #e7f5ff, #fff4e6); border: 1px solid #d0ebff; }
+.welcome h2 { margin: 0 0 8px; }
+.welcome p { margin: 0 0 8px; line-height: 1.45; }
+.welcome-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+button.primary { background: #1c7ed6; border-color: #1c7ed6; color: #fff; font-weight: 600; }
+button.primary:hover { background: #1971c2; }

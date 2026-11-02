@@ -1,17 +1,26 @@
 import { useEffect, useState } from 'react';
-import { defaultState, parseState, serializeState, type AppState } from './appState';
+import { parseState, serializeState, type AppState } from './appState';
+import { demoState } from './demo';
 
 const STORAGE_KEY = 'home-equity-blueprint/state';
 
+/** Первый запуск (или гость) — демо-профиль; иначе — сохранённые данные. */
 function load(): AppState {
+  let saved: string | null = null;
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    saved = localStorage.getItem(STORAGE_KEY);
     if (saved) return parseState(saved);
   } catch (e) {
-    // Испорченные или старые данные не должны ломать экран — начинаем с чистого состояния.
-    console.warn('Не удалось прочитать сохранённые данные:', e);
+    // Испорченные данные не должны ломать экран. Но и терять их нельзя: следующее сохранение их перезапишет,
+    // поэтому сначала откладываем копию под отдельным ключом.
+    console.warn('Не удалось прочитать сохранённые данные, копия отложена в', `${STORAGE_KEY}/backup`, e);
+    try {
+      if (saved) localStorage.setItem(`${STORAGE_KEY}/backup-${new Date().toISOString()}`, saved);
+    } catch {
+      // Хранилище недоступно — ничего не поделать.
+    }
   }
-  return defaultState();
+  return demoState();
 }
 
 /** Состояние приложения, которое само сохраняется в localStorage при каждом изменении. */

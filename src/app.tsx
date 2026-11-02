@@ -34,6 +34,7 @@ import { SavingsSection } from './ui/SavingsSection';
 import { ScenarioBar } from './ui/ScenarioBar';
 import { ScenarioDock } from './ui/ScenarioDock';
 import { ScheduleTable } from './ui/ScheduleTable';
+import { WelcomeBanner } from './ui/WelcomeBanner';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 /** Сколько отрезков платежа показывать в итогах; остальное — в таблице. */
@@ -125,6 +126,8 @@ export function App() {
           <DataFileButtons state={state} onImport={setState} />
         </div>
       </header>
+
+      <WelcomeBanner onStartOwn={() => setState((s) => addProfile(s, 'Я'))} />
 
       <div id="scenario-tabs">
       <ScenarioBar
