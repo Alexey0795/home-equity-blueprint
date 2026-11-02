@@ -8,11 +8,12 @@
  *
  * Версии 1–6 читаются в legacy.ts и переносятся в профиль «Я» (migrateLegacy).
  * 7 — профили и компоненты; 8 — дата выдачи кредита у сценария (календарь платежей), в v7 её нет → null;
- * 9 — реальные кредиты с журналом событий у профиля (`loans`), в v7–8 их нет → [].
+ * 9 — реальные кредиты с журналом событий у профиля (`loans`), в v7–8 их нет → [];
+ * 10 — тип графика (аннуитет / дифференцированный) у карточки банка, сценария и реального кредита.
  * При несовместимом изменении формата — поднять STATE_VERSION и дописать миграцию.
  */
 
-import { convert, parseIsoDate, type Account, type CreditProduct, type Currency, type FreeVariable, type FxRates, type PrepaymentPlan, type RecurringPrepayment } from '../domain';
+import { convert, parseIsoDate, type Account, type Repayment, type CreditProduct, type Currency, type FreeVariable, type FxRates, type PrepaymentPlan, type RecurringPrepayment } from '../domain';
 import { LEGACY_VERSION, parseLegacy, type LegacyState } from './legacy';
 import {
   asArray,
@@ -30,7 +31,7 @@ import { parseLoan, type RealLoan } from './loans';
 import { parseAccount, parseProduct } from './parseShared';
 import { sampleProducts } from './sampleProducts';
 
-export const STATE_VERSION = 9;
+export const STATE_VERSION = 10;
 
 /** Квартира — компонент: цена в своей валюте (она же валюта сделки). */
 export interface Apartment {
@@ -84,6 +85,8 @@ export interface Scenario {
   targetPayment: number;
   /** Дата выдачи кредита «ГГГГ-ММ-ДД»; null — без дат, платежи «месяц 1…n». */
   issueDate: string | null;
+  /** Тип графика; null — как в карточке банка (для своей ставки — аннуитет). */
+  repayment: Repayment | null;
 }
 
 export interface Profile {
@@ -157,6 +160,7 @@ export function newProduct(): CreditProduct {
     id: newId(),
     name: 'Новая карточка',
     ratePeriods: [{ fromMonth: 1, rate: { kind: 'refinancing', marginPct: 5 } }],
+    repayment: 'annuity',
     interestOnlyMonths: 0,
     prepaymentBanMonths: 0,
     maxTermMonths: 240,
@@ -182,6 +186,7 @@ export function newScenario(profile: Profile, name: string): Scenario {
     freeVariable: 'payment',
     targetPayment: DEFAULT_TARGET_PAYMENT,
     issueDate: null,
+    repayment: null,
   };
 }
 
@@ -357,6 +362,7 @@ export function migrateLegacy(legacy: LegacyState): AppState {
       freeVariable: s.freeVariable,
       targetPayment: s.targetPayment,
       issueDate: null,
+      repayment: null,
     };
   });
   const profile: Profile = {
@@ -444,6 +450,7 @@ function parseScenario(raw: unknown, index: number, where: string): Scenario {
     freeVariable: readFreeVariable(r, w),
     targetPayment: readNumber(r, 'targetPayment', w),
     issueDate: readIssueDate(r),
+    repayment: r.repayment === 'annuity' || r.repayment === 'differentiated' ? r.repayment : null,
   };
 }
 
@@ -510,8 +517,14 @@ function uniqueLoans(loans: RealLoan[]): RealLoan[] {
   return loans;
 }
 
-function parseCurrent(r: Raw): AppState {
-  const products = asArray(r, 'products', 'Данные калькулятора').map(parseProduct);
+function parseCurrent(r: Raw, version: number): AppState {
+  let products = asArray(r, 'products', 'Данные калькулятора').map(parseProduct);
+  if (version < 10) {
+    // До v10 типа графика не было. Карточкам из исследования (узнаём по названию) ставим график как в банке —
+    // иначе «Ипотека Экспресс» и подобные считались бы аннуитетом.
+    const fromResearch = new Map(sampleProducts(newId).map((p) => [p.name, p.repayment]));
+    products = products.map((p) => ({ ...p, repayment: fromResearch.get(p.name) ?? p.repayment }));
+  }
   const productIds = uniqueIds(products, 'карточек банков');
   const profiles = asArray(r, 'profiles', 'Данные калькулятора').map((p, i) => parseProfile(p, i, productIds));
   if (profiles.length === 0) throw new RangeError('В данных нет ни одного профиля');
@@ -551,7 +564,7 @@ export function parseState(json: string): AppState {
       }),
     );
   }
-  return parseCurrent(r);
+  return parseCurrent(r, version);
 }
 
 /**

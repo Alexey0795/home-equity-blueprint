@@ -145,6 +145,15 @@ function ProductEditor({ product, refinancingRatePct, onChange }: EditorProps) {
         setPeriods([...periods, { fromMonth: last.fromMonth + 12, rate: { ...last.rate } }]);
       }}>+ Период ставки</button>
 
+      <label className="field">
+        <span>График платежей в банке</span>
+        <select aria-label="График платежей в банке" value={product.repayment}
+          onChange={(e) => onChange({ repayment: e.target.value as CreditProduct['repayment'] })}>
+          <option value="annuity">Аннуитет — равные платежи</option>
+          <option value="differentiated">Дифференцированный — долг равными частями, платёж уменьшается</option>
+        </select>
+      </label>
+
       <h3>Условия и лимиты</h3>
       <div className="fields">
         <NumberField label="Только проценты, мес." value={product.interestOnlyMonths}

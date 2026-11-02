@@ -3,8 +3,7 @@ import type { CreditProduct } from '../domain';
 /**
  * Стартовые карточки банков из исследования docs/research/minsk-mortgage-2026-11-verified.md (проверка 02.11.2026).
  * verified: true — условия сверены со страницей продукта на сайте банка; false — новость или агрегатор.
- * Важно: калькулятор пока считает аннуитет; у карточек с дифференцированным графиком в банке переплата будет меньше
- * (это сказано в оговорках карточки).
+ * repayment — график, как в банке; если банк даёт выбор, в карточке стоит один вариант, другой выбирается в сценарии.
  */
 
 /** Названия, по которым демо находит нужные карточки. */
@@ -25,13 +24,14 @@ export function sampleProducts(newId: () => string): CreditProduct[] {
         { fromMonth: 1, rate: { kind: 'refinancing', marginPct: 2.75 } },
         { fromMonth: 25, rate: { kind: 'refinancing', marginPct: 5.15 } },
       ],
+      repayment: 'differentiated',
       interestOnlyMonths: 12,
       prepaymentBanMonths: 0,
       maxTermMonths: 240,
       minDownPct: 0,
       maxLoan: null,
       notes:
-        'В банке график ДИФФЕРЕНЦИРОВАННЫЙ (долг равными частями) — переплата заметно меньше, чем считает калькулятор (аннуитет). ' +
+        'Дифференцированный график (долг равными частями, другого банк не даёт), первый год — только проценты. ' +
         'До 100% стоимости, только залог покупаемого жилья, без поручителей и комиссий, решение за 1 рабочий день, ' +
         'без справки о доходах для получающих зарплату в Беларусбанке. Досрочка в любой момент без комиссий. Право на кредит — один раз. ' +
         'У застройщика после льготы СР + 4,95.',
@@ -43,15 +43,36 @@ export function sampleProducts(newId: () => string): CreditProduct[] {
       id: newId(),
       name: 'Белагропромбанк — онлайн, вторичка, аннуитет',
       ratePeriods: [{ fromMonth: 1, rate: { kind: 'refinancing', marginPct: 5.25 } }],
+      repayment: 'annuity',
       interestOnlyMonths: 0,
       prepaymentBanMonths: 0,
       maxTermMonths: 360,
       minDownPct: 10,
       maxLoan: 200_000,
       notes:
-        'Только залог жилья, без поручителей. До 30 лет. Есть вариант с дифференцированным графиком: 10,9% первые 730 дней, ' +
-        'затем СР + 5,75 — по переплате он дешевле (калькулятор пока считает только аннуитет).',
+        'Только залог жилья, без поручителей. До 30 лет. Аннуитет — ставка без льготы; с дифференцированным графиком банк даёт ' +
+        'льготу 10,9% на 730 дней — см. соседнюю карточку.',
       source: 'https://www.belapb.by/chastnomu-klientu/kredity/kredit-na-priobretenie-zhilykh-pomeshcheniy-onlayn/',
+      checkedAt: CHECKED,
+      verified: true,
+    },
+    {
+      id: newId(),
+      name: 'Белагропромбанк — онлайн, вторичка, дифференцированный',
+      ratePeriods: [
+        { fromMonth: 1, rate: { kind: 'fixed', ratePct: 10.9 } },
+        { fromMonth: 25, rate: { kind: 'refinancing', marginPct: 5.75 } },
+      ],
+      repayment: 'differentiated',
+      interestOnlyMonths: 0,
+      prepaymentBanMonths: 0,
+      maxTermMonths: 360,
+      minDownPct: 10,
+      maxLoan: 200_000,
+      notes:
+        'Только залог жилья, без поручителей. До 30 лет. Льгота 10,9% — первые 730 дней (в калькуляторе — 24 мес.), ' +
+        'затем 15% (СР + 5,75). Долг равными частями: первые платежи выше, переплата меньше.',
+      source: 'https://www.belapb.by/about/press-tsentr/novosti/do-30-let-ot-10-9-godovykh-na-svoe-zhile-belagroprombank-obnovlyaet-usloviya-kreditovaniya-nedvizhim/',
       checkedAt: CHECKED,
       verified: true,
     },
@@ -62,13 +83,14 @@ export function sampleProducts(newId: () => string): CreditProduct[] {
         { fromMonth: 1, rate: { kind: 'fixed', ratePct: 10.9 } },
         { fromMonth: 19, rate: { kind: 'fixed', ratePct: 14.9 } },
       ],
+      repayment: 'annuity',
       interestOnlyMonths: 0,
       prepaymentBanMonths: 0,
       maxTermMonths: 240,
       minDownPct: 10,
       maxLoan: 700_000,
       notes:
-        'Платежи на выбор: аннуитет или дифференцированные (дифференцированные дешевле по переплате). Досрочка в любой момент ' +
+        'Платежи на выбор: аннуитет или дифференцированные (дифференцированные дешевле по переплате — выберите в сценарии). Досрочка в любой момент ' +
         'без комиссий. Первый взнос и тип ставки после льготы (фиксированная или от СР) на сайте не указаны — стоит условно 10% и «фикс.», уточнить.',
       source: 'https://www.priorbank.by/offers/credits/realty-credit',
       checkedAt: CHECKED,
@@ -81,13 +103,14 @@ export function sampleProducts(newId: () => string): CreditProduct[] {
         { fromMonth: 1, rate: { kind: 'fixed', ratePct: 10.9 } },
         { fromMonth: 25, rate: { kind: 'fixed', ratePct: 14.9 } },
       ],
+      repayment: 'annuity',
       interestOnlyMonths: 0,
       prepaymentBanMonths: 0,
       maxTermMonths: 240,
       minDownPct: 10,
       maxLoan: null,
       notes:
-        'Без поручителей при кредите до 150 000 BYN. Платить можно равными или уменьшающимися частями. По новостям ' +
+        'Без поручителей при кредите до 150 000 BYN. Платить можно равными или уменьшающимися частями (дифференцированный — выберите в сценарии). По новостям ' +
         '(realt.by 09.09.2026, Wikidom 19.08.2026) — сайт банка из облака не открывается, сверить в банке.',
       source: 'https://realt.by/news/view/kredit-belinvestbank/',
       checkedAt: CHECKED,
@@ -100,6 +123,7 @@ export function sampleProducts(newId: () => string): CreditProduct[] {
         { fromMonth: 1, rate: { kind: 'fixed', ratePct: 1 } },
         { fromMonth: 25, rate: { kind: 'refinancing', marginPct: 6.15 } },
       ],
+      repayment: 'annuity',
       interestOnlyMonths: 12,
       prepaymentBanMonths: 60,
       maxTermMonths: 240,
@@ -107,7 +131,7 @@ export function sampleProducts(newId: () => string): CreditProduct[] {
       maxLoan: null,
       notes:
         'Только новостройки застройщиков-партнёров; ставка «от 1%» зависит от программы застройщика. Первый год — только ' +
-        'проценты, досрочное погашение — только через 60 мес. (сайт банка). Ставка после льготы — по пресс-релизу банка.',
+        'проценты, затем аннуитет; досрочное погашение — только через 60 мес. (сайт банка). Ставка после льготы — по пресс-релизу банка.',
       source: 'https://belarusbank.by/fizicheskim_licam/kredit/financing/kredit-ipoteka-s-nami-v-ramkakh-partnerskikh-programm/',
       checkedAt: CHECKED,
       verified: false,
@@ -119,6 +143,7 @@ export function sampleProducts(newId: () => string): CreditProduct[] {
         { fromMonth: 1, rate: { kind: 'fixed', ratePct: 1 } },
         { fromMonth: 13, rate: { kind: 'fixed', ratePct: 16 } },
       ],
+      repayment: 'annuity',
       interestOnlyMonths: 0,
       prepaymentBanMonths: 0,
       maxTermMonths: 240,
@@ -138,6 +163,7 @@ export function sampleProducts(newId: () => string): CreditProduct[] {
         { fromMonth: 1, rate: { kind: 'fixed', ratePct: 0.99 } },
         { fromMonth: 25, rate: { kind: 'fixed', ratePct: 16.9 } },
       ],
+      repayment: 'annuity',
       interestOnlyMonths: 0,
       prepaymentBanMonths: 0,
       maxTermMonths: 240,
@@ -155,6 +181,7 @@ export function sampleProducts(newId: () => string): CreditProduct[] {
         { fromMonth: 1, rate: { kind: 'fixed', ratePct: 14.75 } },
         { fromMonth: 7, rate: { kind: 'fixed', ratePct: 16.75 } },
       ],
+      repayment: 'annuity',
       interestOnlyMonths: 0,
       prepaymentBanMonths: 0,
       maxTermMonths: 240,

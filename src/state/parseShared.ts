@@ -34,6 +34,8 @@ export function parseProduct(raw: unknown, index: number): CreditProduct {
     id: readId(r, where),
     name: readString(r, 'name'),
     ratePeriods: r.ratePeriods.map((p, i) => parseRatePeriod(p, i, where)),
+    // До версии 10 типа графика не было — всё считалось аннуитетом.
+    repayment: r.repayment === 'differentiated' ? 'differentiated' : 'annuity',
     interestOnlyMonths: readNumber(r, 'interestOnlyMonths', where),
     prepaymentBanMonths: readNumber(r, 'prepaymentBanMonths', where),
     maxTermMonths: readNumber(r, 'maxTermMonths', where),

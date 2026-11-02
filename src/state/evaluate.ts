@@ -17,6 +17,7 @@ import {
   type PaymentSchedule,
   type PrepaymentEffect,
   type PrepaymentPlan,
+  type Repayment,
   type SavingsSummary,
   type Solution,
   type YearTotals,
@@ -56,6 +57,8 @@ export interface ScenarioInputs {
   reserve: number;
   /** Первый взнос до решателя. */
   downPayment: number;
+  /** Тип графика: свой у сценария, иначе как в карточке банка, иначе аннуитет. */
+  repayment: Repayment;
   /** Дата выдачи кредита; undefined — без дат («месяц 1…n»). */
   issueDate: CalendarDate | undefined;
   prepayments: PrepaymentPlan[];
@@ -89,6 +92,7 @@ export function evaluateScenario(state: AppState, profile: Profile, scenario: Sc
   const inputs: ScenarioInputs = {
     currency, apartment, product, savingsPlan, prepaymentPlan, savings, reserve: 0, downPayment: Number.NaN, prepayments: [],
     issueDate: scenario.issueDate ? parseIsoDate(scenario.issueDate) : undefined,
+    repayment: scenario.repayment ?? product?.repayment ?? 'annuity',
   };
 
   try {
@@ -115,6 +119,7 @@ export function evaluateScenario(state: AppState, profile: Profile, scenario: Sc
     termMonths: scenario.termMonths,
     targetPayment: scenario.targetPayment,
     prepayments: inputs.prepayments,
+    repayment: inputs.repayment,
     rate: product
       ? { kind: 'product', product, refinancingRatePct: state.refinancingRatePct }
       : { kind: 'manual', annualRatePct: scenario.annualRatePct },

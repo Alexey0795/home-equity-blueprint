@@ -96,6 +96,14 @@ function LoanCard({ loan, onChange, onDelete }: { loan: RealLoan; onChange: (pat
         <NumberField label="Ставка, % годовых" value={loan.annualRatePct} step={0.1} onChange={(annualRatePct) => set({ annualRatePct })} />
         <NumberField label="Срок по договору, лет" value={Math.round((loan.termMonths / 12) * 100) / 100} step={1} min={0.5}
           onChange={(years) => set({ termMonths: Math.round(years * 12) })} />
+        <label className="field"><span>График платежей</span>
+          <select aria-label="График платежей по договору" value={loan.repayment}
+            onChange={(e) => set({ repayment: e.target.value as RealLoan['repayment'] })}>
+            <option value="annuity">Аннуитет</option>
+            <option value="differentiated">Дифференцированный</option>
+          </select></label>
+        <NumberField label="Только проценты, мес." value={loan.interestOnlyMonths} step={1}
+          onChange={(v) => set({ interestOnlyMonths: Number.isFinite(v) ? Math.round(v) : 0 })} />
         <label className="field"><span>Как банк считает дни</span>
           <select aria-label="Как банк считает дни" value={loan.dayCount} onChange={(e) => set({ dayCount: e.target.value as DayCount })}>
             <option value="actual365">Факт. дни / 365</option>

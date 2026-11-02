@@ -87,3 +87,26 @@ describe('evaluateScenario с датой выдачи', () => {
     expect(plain.result.years.map((y) => y.year)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
   });
 });
+
+describe('тип графика в сценарии', () => {
+  it('своя ставка: по умолчанию аннуитет; выбор сценария «дифференцированный» снижает переплату', () => {
+    const { state, profile } = setup(() => {});
+    const annuity = evaluateScenario(state, profile, profile.scenarios[0]!);
+    const diff = evaluateScenario(state, profile, { ...profile.scenarios[0]!, repayment: 'differentiated' });
+    expect(annuity.inputs.repayment).toBe('annuity');
+    expect(diff.inputs.repayment).toBe('differentiated');
+    if ('error' in annuity.result || 'error' in diff.result) throw new Error('не посчиталось');
+    // 240 000 под 12% на 20 лет: дифференцированный — 240 000 × 1% × (240 + 1) / 2 = 289 200.
+    expect(Math.round(diff.result.schedule.totalInterest)).toBe(289_200);
+    expect(diff.result.schedule.totalInterest).toBeLessThan(annuity.result.schedule.totalInterest);
+  });
+
+  it('карточка банка задаёт график, если сценарий не выбрал свой', () => {
+    const { state, profile } = setup(() => {});
+    const express = state.products.find((p) => p.repayment === 'differentiated')!;
+    const ev = evaluateScenario(state, profile, { ...profile.scenarios[0]!, productId: express.id });
+    expect(ev.inputs.repayment).toBe('differentiated');
+    const forced = evaluateScenario(state, profile, { ...profile.scenarios[0]!, productId: express.id, repayment: 'annuity' });
+    expect(forced.inputs.repayment).toBe('annuity');
+  });
+});

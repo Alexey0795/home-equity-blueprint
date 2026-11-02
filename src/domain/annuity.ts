@@ -89,16 +89,21 @@ export function monthsToRepay(balance: number, r: number, payment: number): numb
 const PAID_OFF = 1e-6;
 
 /**
- * Аннуитетный график, в котором ставка меняется по периодам, первые месяцы могут быть «только проценты»,
- * а в отдельные месяцы вносятся досрочные взносы.
+ * График платежей: ставка меняется по периодам, первые месяцы могут быть «только проценты»,
+ * в отдельные месяцы вносятся досрочные взносы. Тип графика — аннуитет (по умолчанию) или дифференцированный.
  *
- * Платёж пересчитывается на остаток долга и оставшийся срок, когда меняется ставка, заканчивается период
+ * Дифференцированный: доля основного долга = остаток / оставшиеся месяцы, считается при начале погашения
+ * и после досрочки «уменьшить платёж»; смена ставки долю не меняет (меняются только проценты). После досрочки
+ * «сократить срок» доля прежняя, последний месяц переносится ближе.
+ *
+ * Аннуитет: платёж пересчитывается на остаток долга и оставшийся срок, когда меняется ставка, заканчивается период
  * «только проценты» или был досрочный взнос с режимом «уменьшить платёж». После взноса «сократить срок»
  * платёж остаётся прежним, а плановый последний месяц переносится ближе — и дальнейшие пересчёты
  * (например, при смене ставки) идут уже на сокращённый срок.
  */
 export function buildSchedule(params: VariableLoanParams): PaymentSchedule {
-  const { principal, termMonths, rateSteps, interestOnlyMonths, prepayments = [] } = params;
+  const { principal, termMonths, rateSteps, interestOnlyMonths, prepayments = [], repayment = 'annuity' } = params;
+  const differentiated = repayment === 'differentiated';
   validatePrincipalAndTerm(principal, termMonths);
   validateSteps(rateSteps);
   if (!Number.isInteger(interestOnlyMonths) || interestOnlyMonths < 0 || interestOnlyMonths >= termMonths) {
@@ -110,6 +115,8 @@ export function buildSchedule(params: VariableLoanParams): PaymentSchedule {
   let balance = principal;
   let totalInterest = 0;
   let payment = 0;
+  /** Доля основного долга в месяц (дифференцированный график). */
+  let part = 0;
   let prevRate = Number.NaN;
   /** Плановый последний месяц: сдвигается раньше после взносов «сократить срок». */
   let endMonth = termMonths;
@@ -128,6 +135,12 @@ export function buildSchedule(params: VariableLoanParams): PaymentSchedule {
     } else if (isLast) {
       // В последнем месяце гасим весь остаток, чтобы погрешность float не оставила «хвост» долга.
       principalPart = balance;
+    } else if (differentiated) {
+      if (month === interestOnlyMonths + 1 || recalc) {
+        part = balance / (endMonth - month + 1);
+        recalc = false;
+      }
+      principalPart = Math.min(part, balance);
     } else {
       const amortizationStarts = month === interestOnlyMonths + 1;
       if (amortizationStarts || annualRatePct !== prevRate || recalc) {
@@ -151,7 +164,10 @@ export function buildSchedule(params: VariableLoanParams): PaymentSchedule {
         // В период «только проценты» сокращать нечего — взнос уменьшит платёж, когда начнётся погашение.
         recalc = !interestOnly;
       } else {
-        endMonth = Math.min(endMonth, month + monthsToRepay(balance, r, payment));
+        endMonth = Math.min(
+          endMonth,
+          month + (differentiated ? Math.ceil(balance / part - 1e-9) : monthsToRepay(balance, r, payment)),
+        );
       }
     }
 

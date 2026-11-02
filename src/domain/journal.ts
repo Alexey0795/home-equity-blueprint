@@ -1,6 +1,6 @@
 import { buildSchedule, levelPayment, monthlyRate, monthsToRepay } from './annuity';
 import { paymentDate, parseIsoDate, toIsoDate, type CalendarDate } from './calendar';
-import type { PaymentSchedule, PrepaymentMode } from './types';
+import type { PaymentSchedule, PrepaymentMode, Repayment } from './types';
 
 /**
  * Хроника реального кредита: фактические события и точная переплата.
@@ -26,6 +26,10 @@ export interface LoanTerms {
   annualRatePct: number;
   termMonths: number;
   dayCount: DayCount;
+  /** Тип графика по договору; по умолчанию аннуитет. */
+  repayment?: Repayment;
+  /** Первые N плановых платежей — только проценты; по умолчанию 0. */
+  interestOnlyMonths?: number;
 }
 
 export interface JournalRow {
@@ -98,6 +102,10 @@ function validate(terms: LoanTerms, events: LoanEventInput[]): void {
   if (!Number.isFinite(terms.principal) || terms.principal <= 0) throw new RangeError('Сумма кредита должна быть положительным числом');
   if (!Number.isFinite(terms.annualRatePct) || terms.annualRatePct < 0) throw new RangeError('Ставка должна быть неотрицательным числом');
   if (!Number.isInteger(terms.termMonths) || terms.termMonths < 1) throw new RangeError('Срок должен быть целым числом месяцев >= 1');
+  const io = terms.interestOnlyMonths ?? 0;
+  if (!Number.isInteger(io) || io < 0 || io >= terms.termMonths) {
+    throw new RangeError('Период «только проценты» должен быть целым числом месяцев, меньше срока кредита');
+  }
   events.forEach((e, i) => {
     const where = `Событие №${i + 1}`;
     const date = parseIsoDate(e.date);
@@ -125,9 +133,12 @@ export function runJournal(terms: LoanTerms, events: LoanEventInput[]): JournalR
   let principalPaid = 0;
   let totalPaid = 0;
   let last = issue;
-  let payment = levelPayment(balance, monthlyRate(rate), terms.termMonths);
+  const io = terms.interestOnlyMonths ?? 0;
+  const diff = terms.repayment === 'differentiated';
   /** Номер последнего планового платежа: сдвигается раньше после досрочки «сократить срок». */
   let endMonth = terms.termMonths;
+  /** Аннуитет — плановый платёж; дифференцированный — доля основного долга в месяц. */
+  let level = 0;
   const rows: JournalRow[] = [];
 
   /** Сколько плановых платежей осталось после даты (до конца срока). */
@@ -136,6 +147,19 @@ export function runJournal(terms: LoanTerms, events: LoanEventInput[]): JournalR
     while (k <= endMonth && dayNumber(paymentDate(issue, k)) <= dayNumber(date)) k++;
     return { firstMonth: k, count: Math.max(0, endMonth - k + 1) };
   };
+  /** Пересчитать платёж (или долю долга) на остаток и оставшиеся месяцы погашения, начиная с платежа firstMonth. */
+  const resetLevel = (firstMonth: number) => {
+    const months = endMonth - Math.max(firstMonth - 1, io);
+    if (months <= 0 || balance <= 0) return;
+    level = diff ? balance / months : levelPayment(balance, monthlyRate(rate), months);
+  };
+  /** Ожидаемый плановый платёж номер firstMonth: в «только проценты» — проценты, иначе аннуитет или доля + проценты. */
+  const planned = (firstMonth: number) => {
+    const interest = balance * monthlyRate(rate);
+    if (firstMonth <= io) return interest;
+    return diff ? Math.min(level, balance) + interest : level;
+  };
+  resetLevel(1);
 
   for (const { e, index } of sorted) {
     const date = parseIsoDate(e.date);
@@ -149,8 +173,8 @@ export function runJournal(terms: LoanTerms, events: LoanEventInput[]): JournalR
 
     if (e.kind === 'rate') {
       rate = e.annualRatePct;
-      const { count } = remainingAfter(date);
-      if (count > 0 && balance > 0) payment = levelPayment(balance, monthlyRate(rate), count);
+      // Аннуитет пересчитывается на новую ставку; у дифференцированного доля долга прежняя, меняются проценты.
+      if (!diff) resetLevel(remainingAfter(date).firstMonth);
     } else if (e.kind === 'payment') {
       totalPaid += e.amount;
       const st = e.statement;
@@ -176,11 +200,13 @@ export function runJournal(terms: LoanTerms, events: LoanEventInput[]): JournalR
     balance = round2(balance - principalNow);
 
     if (e.kind === 'prepayment' && balance > 0) {
-      const { firstMonth, count } = remainingAfter(date);
-      if (e.mode === 'reducePayment' && count > 0) {
-        payment = levelPayment(balance, monthlyRate(rate), count);
-      } else if (e.mode === 'reduceTerm') {
-        endMonth = Math.min(endMonth, firstMonth - 1 + monthsToRepay(balance, monthlyRate(rate), payment));
+      const { firstMonth } = remainingAfter(date);
+      if (e.mode === 'reducePayment' || firstMonth <= io) {
+        // В «только проценты» сокращать нечего — взнос уменьшит платёж, когда начнётся погашение.
+        resetLevel(firstMonth);
+      } else {
+        const months = diff ? Math.ceil(balance / level - 1e-9) : monthsToRepay(balance, monthlyRate(rate), level);
+        endMonth = Math.min(endMonth, firstMonth - 1 + months);
       }
     }
 
@@ -196,20 +222,22 @@ export function runJournal(terms: LoanTerms, events: LoanEventInput[]): JournalR
       unpaidInterest: unpaid,
       cumulativeInterestPaid: interestPaid,
       ratePct: rate,
-      scheduledPayment: payment,
+      scheduledPayment: planned(remainingAfter(date).firstMonth),
       discrepancy,
     });
   }
 
   const { firstMonth, count } = remainingAfter(last);
+  // Если плановые даты кончились, а долг остался (недоплата) — хотя бы один платёж.
+  const forecastMonths = Math.max(1, count);
   const forecast =
     balance > 0
       ? buildSchedule({
           principal: balance,
-          // Если плановые даты кончились, а долг остался (недоплата) — хотя бы один платёж.
-          termMonths: Math.max(1, count),
+          termMonths: forecastMonths,
           rateSteps: [{ fromMonth: 1, annualRatePct: rate }],
-          interestOnlyMonths: 0,
+          interestOnlyMonths: Math.min(Math.max(0, io - (firstMonth - 1)), forecastMonths - 1),
+          repayment: terms.repayment,
         })
       : null;
 
@@ -221,7 +249,7 @@ export function runJournal(terms: LoanTerms, events: LoanEventInput[]): JournalR
     balance,
     unpaidInterest: unpaid,
     ratePct: rate,
-    scheduledPayment: payment,
+    scheduledPayment: planned(firstMonth),
     lastDate: toIsoDate(last),
     forecast,
     forecastFromMonth: firstMonth,
@@ -229,7 +257,8 @@ export function runJournal(terms: LoanTerms, events: LoanEventInput[]): JournalR
       principal: terms.principal,
       termMonths: terms.termMonths,
       rateSteps: [{ fromMonth: 1, annualRatePct: terms.annualRatePct }],
-      interestOnlyMonths: 0,
+      interestOnlyMonths: io,
+      repayment: terms.repayment,
     }),
   };
 }

@@ -70,7 +70,7 @@ describe('rate — при какой ставке сходится', () => {
       { fromMonth: 1, rate: { kind: 'fixed', ratePct: 1 } },
       { fromMonth: 25, rate: { kind: 'refinancing', marginPct: 6.15 } },
     ],
-    interestOnlyMonths: 12, prepaymentBanMonths: 60, maxTermMonths: 240, minDownPct: 0, maxLoan: null,
+    repayment: 'annuity', interestOnlyMonths: 12, prepaymentBanMonths: 60, maxTermMonths: 240, minDownPct: 0, maxLoan: null,
     notes: '', source: '', checkedAt: '', verified: false,
   };
 

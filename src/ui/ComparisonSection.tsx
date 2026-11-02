@@ -50,7 +50,7 @@ function buildRows(
       roman: toRoman(index + 1),
       name: s.name || 'Без названия',
       color: scenarioColor(index),
-      terms: `${sameApartment ? '' : `${ev.inputs.apartment.name} · `}${product ? product.name : `своя ставка ${s.annualRatePct}%`}`,
+      terms: `${sameApartment ? '' : `${ev.inputs.apartment.name} · `}${product ? product.name : `своя ставка ${s.annualRatePct}%`}${ev.inputs.repayment === 'differentiated' ? ' · дифф.' : ''}`,
       compared: profile.comparedScenarioIds.includes(s.id),
     };
     if ('error' in r) return { ...base, values: null, note: 'не сходится' };

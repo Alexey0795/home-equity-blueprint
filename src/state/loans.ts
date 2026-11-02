@@ -2,7 +2,7 @@
  * Реальный кредит — хроника: фактические параметры и журнал событий (платежи, досрочка, смены ставки).
  * Расчёт — domain/journal.ts (runJournal). Здесь — формат хранения и разбор.
  */
-import { parseIsoDate, type Currency, type DayCount, type LoanEventInput, type LoanTerms, type PrepaymentMode } from '../domain';
+import { parseIsoDate, type Currency, type DayCount, type LoanEventInput, type LoanTerms, type PrepaymentMode, type Repayment } from '../domain';
 import { asArray, asObject, readCurrency, readId, readMode, readNumber, readString, uniqueIds } from './parse';
 
 export type LoanEvent =
@@ -27,6 +27,10 @@ export interface RealLoan {
   annualRatePct: number;
   termMonths: number;
   dayCount: DayCount;
+  /** Тип графика по договору. */
+  repayment: Repayment;
+  /** Первые N плановых платежей — только проценты. */
+  interestOnlyMonths: number;
   events: LoanEvent[];
 }
 
@@ -42,6 +46,8 @@ export function newLoan(today: string): RealLoan {
     annualRatePct: 14.9,
     termMonths: 240,
     dayCount: 'actual365',
+    repayment: 'annuity',
+    interestOnlyMonths: 0,
     events: [],
   };
 }
@@ -59,6 +65,8 @@ export function loanTerms(loan: RealLoan): LoanTerms {
     annualRatePct: loan.annualRatePct,
     termMonths: loan.termMonths,
     dayCount: loan.dayCount,
+    repayment: loan.repayment,
+    interestOnlyMonths: loan.interestOnlyMonths,
   };
 }
 
@@ -128,6 +136,9 @@ export function parseLoan(raw: unknown, index: number, where: string): RealLoan 
     annualRatePct: readNumber(r, 'annualRatePct', w),
     termMonths: readNumber(r, 'termMonths', w),
     dayCount: r.dayCount === 'actualActual' ? 'actualActual' : 'actual365',
+    // До версии 10 — аннуитет без «только проценты».
+    repayment: r.repayment === 'differentiated' ? 'differentiated' : 'annuity',
+    interestOnlyMonths: typeof r.interestOnlyMonths === 'number' ? r.interestOnlyMonths : 0,
     events,
   };
 }

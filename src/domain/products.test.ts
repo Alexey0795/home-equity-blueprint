@@ -8,6 +8,7 @@ const product = (patch: Partial<CreditProduct> = {}): CreditProduct => ({
     { fromMonth: 1, rate: { kind: 'fixed', ratePct: 1 } },
     { fromMonth: 25, rate: { kind: 'refinancing', marginPct: 6.15 } },
   ],
+  repayment: 'annuity',
   interestOnlyMonths: 12,
   prepaymentBanMonths: 60,
   maxTermMonths: 240,

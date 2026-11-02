@@ -7,6 +7,7 @@ import {
   paymentHeadroom,
   paymentDate,
   prepaymentBanProblems,
+  type Currency,
   type DealField,
   type FreeVariable,
 } from './domain';
@@ -50,6 +51,35 @@ import { WelcomeBanner } from './ui/WelcomeBanner';
 const round2 = (n: number) => Math.round(n * 100) / 100;
 /** Сколько отрезков платежа показывать в итогах; остальное — в таблице. */
 const MAX_PHASES = 4;
+
+const REPAYMENT_LABEL = { annuity: 'аннуитет', differentiated: 'дифференцированный' } as const;
+
+/** Дифференцированный платёж меняется каждый месяц — показываем первый, самый большой и последний. */
+function DifferentiatedPayments({ rows, currency, monthLabel }: {
+  rows: { month: number; payment: number }[];
+  currency: Currency;
+  monthLabel: (m: number) => string;
+}) {
+  const first = rows[0]!;
+  const last = rows.at(-1)!;
+  const max = rows.reduce((a, b) => (b.payment > a.payment + 1e-9 ? b : a), first);
+  const items = [
+    { label: 'первый', row: first },
+    ...(max !== first ? [{ label: 'самый большой', row: max }] : []),
+    { label: 'последний', row: last },
+  ];
+  return (
+    <ul className="phases">
+      {items.map(({ label, row }) => (
+        <li key={label}>
+          <strong><Money value={row.payment} currency={currency} /></strong>
+          <span>{label}, {monthLabel(row.month)}</span>
+        </li>
+      ))}
+      <li><span className="muted">долг равными частями</span></li>
+    </ul>
+  );
+}
 
 /** «в сценариях I, III» — подпись под выбором компонента. */
 function sharedNote(numbers: number[]): string {
@@ -250,6 +280,16 @@ export function App() {
               ))}
             </select>
           </label>
+          <label className="field">
+            <span>График платежей</span>
+            <select aria-label="График платежей" value={scenario.repayment ?? ''}
+              title="Аннуитет — платёж одинаковый, в начале почти весь уходит на проценты. Дифференцированный — долг гасится равными частями: в начале платёж выше, потом уменьшается, переплата меньше."
+              onChange={(e) => update({ repayment: (e.target.value || null) as Scenario['repayment'] })}>
+              <option value="">{product ? `Как в банке — ${REPAYMENT_LABEL[product.repayment]}` : 'Аннуитет — равные платежи'}</option>
+              {product && <option value="annuity">Аннуитет — равные платежи</option>}
+              <option value="differentiated">Дифференцированный — долг равными частями</option>
+            </select>
+          </label>
           {!product && (free === 'rate' ? (
             <ComputedField label="Ставка, % годовых" value={'error' in result ? '—' : formatPct(solvedManualRate)} />
           ) : (
@@ -308,7 +348,9 @@ export function App() {
             </div>
             <div className={headroom < 0 ? 'over' : ''}>
               <span>Ежемесячный платёж</span>
-              {result.phases.length === 1 ? (
+              {inputs.repayment === 'differentiated' ? (
+                <DifferentiatedPayments rows={result.schedule.rows} currency={currency} monthLabel={monthLabel} />
+              ) : result.phases.length === 1 ? (
                 <strong><BigMoney value={result.schedule.monthlyPayment} currency={currency} /></strong>
               ) : (
                 <ul className="phases">

@@ -1,6 +1,6 @@
 import { buildSchedule } from './annuity';
 import { productRateSteps, type CreditProduct } from './products';
-import type { PaymentSchedule, PrepaymentPlan, RateStep } from './types';
+import type { PaymentSchedule, PrepaymentPlan, RateStep, Repayment } from './types';
 
 /**
  * Режим «зафиксировать всё, кроме одного»: одна величина свободна, остальные заданы, свободная вычисляется.
@@ -31,6 +31,8 @@ export interface DealInput {
   /** Желаемый (максимальный) ежемесячный платёж — вход для всех режимов, кроме payment. */
   targetPayment: number;
   prepayments?: PrepaymentPlan[];
+  /** Тип графика; по умолчанию аннуитет. Платёж в обоих случаях пропорционален сумме кредита — решатель работает так же. */
+  repayment?: Repayment;
 }
 
 export interface Solution {
@@ -66,6 +68,7 @@ export function scheduleForDeal(deal: DealInput, principal = Math.max(0, deal.pr
     rateSteps: rateSteps(deal.rate),
     interestOnlyMonths: deal.rate.kind === 'product' ? deal.rate.product.interestOnlyMonths : 0,
     prepayments: deal.prepayments,
+    repayment: deal.repayment,
   });
 }
 

@@ -81,7 +81,7 @@ describe('миграция старых версий в профиль «Я»', 
       activeScenarioId: 's1',
       scenarios: [{ id: 's1', name: 'Старый', price: 300_000, downPayment: 60_000, annualRatePct: 12, termMonths: 240 }],
     }));
-    expect(state.version).toBe(9);
+    expect(state.version).toBe(10);
     const profile = activeProfile(state);
     expect(profile.name).toBe('Я');
     expect(profile.apartments).toEqual([expect.objectContaining({ currency: 'BYN', price: 300_000 })]);
@@ -235,5 +235,25 @@ describe('версия 9: реальные кредиты', () => {
     const bad = JSON.parse(serializeState(state));
     bad.profiles[0].loans[0].events[0].date = '2027-02-30';
     expect(() => parseState(JSON.stringify(bad))).toThrow('событие №1: Такой даты нет');
+  });
+});
+
+describe('версия 10: тип графика', () => {
+  it('v9: карточки из исследования получают график как в банке, свои — аннуитет; выбор в сценарии сохраняется', () => {
+    const state = defaultState();
+    const own = { ...state.products[0]!, id: 'own', name: 'Моя карточка' };
+    state.products.push(own);
+    const raw = JSON.parse(serializeState(state));
+    raw.version = 9;
+    for (const p of raw.products) delete p.repayment;
+    for (const s of raw.profiles[0].scenarios) delete s.repayment;
+    const loaded = parseState(JSON.stringify(raw));
+    const byName = (n: string) => loaded.products.find((p) => p.name === n)!;
+    expect(byName('Беларусбанк — «Ипотека Экспресс» (вторичка, самый простой)').repayment).toBe('differentiated');
+    expect(byName('Моя карточка').repayment).toBe('annuity');
+    expect(activeScenario(activeProfile(loaded)).repayment).toBeNull();
+
+    activeScenario(activeProfile(state)).repayment = 'differentiated';
+    expect(activeScenario(activeProfile(roundTrip(state))).repayment).toBe('differentiated');
   });
 });

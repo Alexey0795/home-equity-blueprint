@@ -19,6 +19,7 @@ export function describeProduct(product: CreditProduct, refinancingRatePct: numb
     const range = next ? `мес. ${p.fromMonth}–${next.fromMonth - 1}` : periods.length > 1 ? `с ${p.fromMonth}-го мес.` : 'весь срок';
     return `${describeRate(p.rate, refinancingRatePct)} — ${range}`;
   });
+  if (product.repayment === 'differentiated') lines.push('Дифференцированный график: долг равными частями, платёж уменьшается');
   if (product.interestOnlyMonths > 0) lines.push(`Первые ${product.interestOnlyMonths} мес. — только проценты`);
   if (product.prepaymentBanMonths > 0) lines.push(`Досрочное погашение запрещено ${product.prepaymentBanMonths} мес.`);
   return lines;

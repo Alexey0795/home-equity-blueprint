@@ -1,4 +1,4 @@
-import type { PrepaymentPlan, RateStep } from './types';
+import type { PrepaymentPlan, RateStep, Repayment } from './types';
 
 /** Как задана ставка в периоде: фиксированная или «ставка рефинансирования Нацбанка + надбавка». */
 export type RateSpec =
@@ -17,6 +17,8 @@ export interface CreditProduct {
   /** «Белинвестбанк — вторичное жильё». */
   name: string;
   ratePeriods: RatePeriod[];
+  /** Тип графика в банке: аннуитет или дифференцированный. */
+  repayment: Repayment;
   /** Первые N месяцев — только проценты. */
   interestOnlyMonths: number;
   /** Досрочное погашение запрещено первые N месяцев (учитывается с этапа 5). */
