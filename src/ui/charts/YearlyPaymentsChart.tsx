@@ -12,7 +12,7 @@ export function YearlyPaymentsChart({ years }: { years: YearTotals[] }) {
         <XAxis dataKey="year" tickLine={false} label={{ value: 'год', position: 'insideBottomRight', offset: -4 }} />
         <YAxis tickFormatter={formatCompact} width={76} />
         <Tooltip formatter={(value) => formatMoney(Number(value))} labelFormatter={(y) => `Год ${String(y)}`} />
-        <Legend />
+        <Legend itemSorter={null} />
         <Bar dataKey="interest" name="Проценты" stackId="pay" fill={COLORS.interest} isAnimationActive={false} />
         <Bar dataKey="principal" name="Основной долг" stackId="pay" fill={COLORS.principal} isAnimationActive={false} />
         {years.some((y) => y.prepayment > 0) && (

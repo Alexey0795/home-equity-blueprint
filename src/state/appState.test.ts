@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   activeScenario,
+  addScenario,
+  deleteScenario,
+  duplicateScenario,
+  MAX_COMPARED,
+  toggleCompared,
   DEFAULT_REFINANCING_RATE_PCT,
   DEFAULT_FX_RATES,
   defaultState,
@@ -69,7 +74,7 @@ describe('миграция с версии 1', () => {
 
   it('сценарии сохраняются, валюта — BYN, счетов нет, курсы по умолчанию, ставка ручная', () => {
     const state = parseState(v1);
-    expect(state.version).toBe(5);
+    expect(state.version).toBe(6);
     expect(state.scenarios[0]).toEqual({
       id: 's1', name: 'Старый', currency: 'BYN', price: 300_000, downPayment: 60_000,
       productId: null, annualRatePct: 12, termMonths: 240, freeVariable: 'payment', targetPayment: 3_000,
@@ -121,5 +126,58 @@ describe('версия 5: досрочные взносы', () => {
     const raw = JSON.parse(serializeState(defaultState()));
     raw.scenarios[0].prepayments = [{ id: 'x', month: 1, amount: 1, mode: 'magic' }];
     expect(() => parseState(JSON.stringify(raw))).toThrow('«magic»');
+  });
+});
+
+describe('версия 6: несколько сценариев', () => {
+  it('добавление: новый сценарий в конце и становится активным', () => {
+    const state = addScenario(defaultState());
+    expect(state.scenarios).toHaveLength(2);
+    expect(state.activeScenarioId).toBe(state.scenarios[1]!.id);
+    expect(state.scenarios[1]!.name).toBe('Сценарий 2');
+  });
+
+  it('копия: сразу после оригинала, свои id у сценария и досрочных взносов, правка копии не трогает оригинал', () => {
+    let state = defaultState();
+    state.scenarios[0]!.prepayments = [newPrepayment(12)];
+    state = addScenario(state);
+    const original = state.scenarios[0]!;
+    state = duplicateScenario(state, original.id);
+    const copy = state.scenarios[1]!;
+    expect(copy.name).toBe(`${original.name} (копия)`);
+    expect(copy.id).not.toBe(original.id);
+    expect(copy.prepayments[0]!.id).not.toBe(original.prepayments[0]!.id);
+    expect(state.activeScenarioId).toBe(copy.id);
+    copy.prepayments[0]!.amount = 999;
+    expect(original.prepayments[0]!.amount).toBe(10_000);
+  });
+
+  it('удаление: активным становится соседний, сценарий уходит из сравнения, последний не удаляется', () => {
+    let state = addScenario(addScenario(defaultState()));
+    const [a, b, c] = state.scenarios.map((s) => s.id) as [string, string, string];
+    state = toggleCompared({ ...state, activeScenarioId: b }, b);
+    state = deleteScenario(state, b);
+    expect(state.scenarios.map((s) => s.id)).toEqual([a, c]);
+    expect(state.activeScenarioId).toBe(c);
+    expect(state.comparedScenarioIds).toEqual([]);
+    state = deleteScenario(deleteScenario(state, c), a);
+    expect(state.scenarios).toHaveLength(1);
+  });
+
+  it('сравнение: включить/выключить, не больше MAX_COMPARED', () => {
+    let state = defaultState();
+    for (let i = 0; i < MAX_COMPARED + 1; i++) state = addScenario(state);
+    for (const s of state.scenarios) state = toggleCompared(state, s.id);
+    expect(state.comparedScenarioIds).toHaveLength(MAX_COMPARED);
+    const first = state.comparedScenarioIds[0]!;
+    expect(toggleCompared(state, first).comparedScenarioIds).not.toContain(first);
+  });
+
+  it('сравнение переживает сохранение; несуществующие id отбрасываются', () => {
+    let state = addScenario(defaultState());
+    state = toggleCompared(state, state.scenarios[0]!.id);
+    const raw = JSON.parse(serializeState(state));
+    raw.comparedScenarioIds.push('удалён');
+    expect(parseState(JSON.stringify(raw)).comparedScenarioIds).toEqual([state.scenarios[0]!.id]);
   });
 });

@@ -10,6 +10,7 @@
  * 3 — карточки банков, ставка рефинансирования, выбор карточки в сценарии.
  * 4 — режим «зафиксировать всё, кроме одного»: свободная величина и желаемый платёж в сценарии.
  * 5 — досрочные взносы в сценарии.
+ * 6 — список сценариев для сравнения на одном графике.
  */
 
 import {
@@ -25,7 +26,7 @@ import {
 } from '../domain';
 import { sampleProducts } from './sampleProducts';
 
-export const STATE_VERSION = 5;
+export const STATE_VERSION = 6;
 
 export interface Scenario {
   id: string;
@@ -61,6 +62,8 @@ export interface AppState {
   products: CreditProduct[];
   /** Ставка рефинансирования Нацбанка, % годовых — общая для всех карточек «СР + надбавка». */
   refinancingRatePct: number;
+  /** id сценариев, которые показываются на графике сравнения. */
+  comparedScenarioIds: string[];
 }
 
 /** Ориентировочные курсы для первого запуска; пользователь вводит актуальные сам. */
@@ -126,7 +129,57 @@ export function defaultState(): AppState {
     fxRates: { ...DEFAULT_FX_RATES },
     products: sampleProducts(newId),
     refinancingRatePct: DEFAULT_REFINANCING_RATE_PCT,
+    comparedScenarioIds: [],
   };
+}
+
+/** Сколько сценариев можно показать на графике сравнения одновременно. */
+export const MAX_COMPARED = 6;
+
+/** Новый сценарий с настройками по умолчанию становится активным. */
+export function addScenario(state: AppState): AppState {
+  const scenario = { ...defaultScenario(), name: `Сценарий ${state.scenarios.length + 1}` };
+  return { ...state, scenarios: [...state.scenarios, scenario], activeScenarioId: scenario.id };
+}
+
+/** Копия сценария (с новыми id у досрочных взносов) встаёт сразу после оригинала и становится активной. */
+export function duplicateScenario(state: AppState, id: string): AppState {
+  const index = state.scenarios.findIndex((s) => s.id === id);
+  const source = state.scenarios[index];
+  if (!source) return state;
+  const copy: Scenario = {
+    ...structuredClone(source),
+    id: newId(),
+    name: `${source.name} (копия)`,
+    prepayments: source.prepayments.map((p) => ({ ...p, id: newId() })),
+  };
+  const scenarios = [...state.scenarios];
+  scenarios.splice(index + 1, 0, copy);
+  return { ...state, scenarios, activeScenarioId: copy.id };
+}
+
+/** Удаление сценария. Последний не удаляется. Если удалён активный — активным становится соседний. */
+export function deleteScenario(state: AppState, id: string): AppState {
+  if (state.scenarios.length <= 1) return state;
+  const index = state.scenarios.findIndex((s) => s.id === id);
+  if (index < 0) return state;
+  const scenarios = state.scenarios.filter((s) => s.id !== id);
+  const activeScenarioId =
+    state.activeScenarioId === id ? scenarios[Math.min(index, scenarios.length - 1)]!.id : state.activeScenarioId;
+  return {
+    ...state,
+    scenarios,
+    activeScenarioId,
+    comparedScenarioIds: state.comparedScenarioIds.filter((x) => x !== id),
+  };
+}
+
+/** Включить или выключить сценарий на графике сравнения (не больше MAX_COMPARED). */
+export function toggleCompared(state: AppState, id: string): AppState {
+  const ids = state.comparedScenarioIds;
+  if (ids.includes(id)) return { ...state, comparedScenarioIds: ids.filter((x) => x !== id) };
+  if (ids.length >= MAX_COMPARED) return state;
+  return { ...state, comparedScenarioIds: [...ids, id] };
 }
 
 export function findProduct(state: AppState, id: string | null): CreditProduct | undefined {
@@ -311,5 +364,19 @@ export function parseState(json: string): AppState {
 
   const activeScenarioId =
     typeof r.activeScenarioId === 'string' && scenarioIds.has(r.activeScenarioId) ? r.activeScenarioId : scenarios[0]!.id;
-  return { version: STATE_VERSION, activeScenarioId, scenarios, accounts, fxRates, products, refinancingRatePct };
+  // Несуществующие сценарии в сравнении просто отбрасываем.
+  const comparedScenarioIds =
+    version >= 6 && Array.isArray(r.comparedScenarioIds)
+      ? r.comparedScenarioIds.filter((x): x is string => typeof x === 'string' && scenarioIds.has(x)).slice(0, MAX_COMPARED)
+      : [];
+  return {
+    version: STATE_VERSION,
+    activeScenarioId,
+    scenarios,
+    accounts,
+    fxRates,
+    products,
+    refinancingRatePct,
+    comparedScenarioIds,
+  };
 }

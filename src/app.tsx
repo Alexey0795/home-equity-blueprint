@@ -4,21 +4,26 @@ import {
   convert,
   loanAmount,
   maxPayment,
-  paymentPhases,
   prepaymentBanProblems,
-  prepaymentEffect,
-  solveDeal,
   summarizeSavings,
-  yearlyTotals,
   type Currency,
-  type DealInput,
   type FreeVariable,
 } from './domain';
-import { activeScenario, findProduct, type Scenario } from './state/appState';
+import {
+  activeScenario,
+  addScenario,
+  deleteScenario,
+  duplicateScenario,
+  findProduct,
+  toggleCompared,
+  type Scenario,
+} from './state/appState';
+import { evaluateScenario } from './state/evaluate';
 import { useAppState } from './state/useAppState';
 import { OverpaymentChart } from './ui/charts/OverpaymentChart';
 import { YearlyPaymentsChart } from './ui/charts/YearlyPaymentsChart';
 import { ComputedField } from './ui/ComputedField';
+import { ComparisonSection } from './ui/ComparisonSection';
 import { CurrencySelect } from './ui/CurrencySelect';
 import { describeProduct, formatPct } from './ui/describeProduct';
 import { DataFileButtons } from './ui/DataFileButtons';
@@ -28,6 +33,7 @@ import { NumberField } from './ui/NumberField';
 import { PrepaymentsSection } from './ui/PrepaymentsSection';
 import { ProductsSection } from './ui/ProductsSection';
 import { SavingsSection } from './ui/SavingsSection';
+import { ScenarioBar } from './ui/ScenarioBar';
 import { ScheduleTable } from './ui/ScheduleTable';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -74,31 +80,9 @@ export function App() {
   const product = findProduct(state, scenario.productId);
   const free = scenario.freeVariable;
 
-  const result = useMemo(() => {
-    const input: DealInput = {
-      price: scenario.price,
-      downPayment: scenario.downPayment,
-      termMonths: scenario.termMonths,
-      targetPayment: scenario.targetPayment,
-      prepayments: scenario.prepayments,
-      rate: product
-        ? { kind: 'product', product, refinancingRatePct: state.refinancingRatePct }
-        : { kind: 'manual', annualRatePct: scenario.annualRatePct },
-    };
-    try {
-      const { deal, schedule, baseline } = solveDeal(free, input);
-      return {
-        deal,
-        schedule,
-        baseline,
-        effect: prepaymentEffect(baseline, schedule),
-        phases: paymentPhases(schedule),
-        years: yearlyTotals(schedule),
-      };
-    } catch (e) {
-      return { error: errorText(e) };
-    }
-  }, [free, product, state.refinancingRatePct, scenario]);
+  /** Расчёт всех сценариев — для вкладок и сравнения; активный берём отсюда же. */
+  const results = useMemo(() => new Map(state.scenarios.map((sc) => [sc.id, evaluateScenario(state, sc)])), [state]);
+  const result = results.get(scenario.id)!;
 
   /** Сделка с вычисленной величиной; если не сошлось — как ввёл пользователь. */
   const deal = 'error' in result ? scenario : result.deal;
@@ -148,6 +132,18 @@ export function App() {
         <h1>Ипотечный калькулятор</h1>
         <DataFileButtons state={state} onImport={setState} />
       </header>
+
+      <ScenarioBar
+        scenarios={state.scenarios}
+        activeId={scenario.id}
+        results={results}
+        onSelect={(id) => setState((s) => ({ ...s, activeScenarioId: id }))}
+        onAdd={() => setState(addScenario)}
+        onDuplicate={() => setState((s) => duplicateScenario(s, scenario.id))}
+        onDelete={() => {
+          if (window.confirm(`Удалить сценарий «${scenario.name}»?`)) setState((s) => deleteScenario(s, scenario.id));
+        }}
+      />
 
       <section className="card">
         <div className="scenario-row">
@@ -303,6 +299,11 @@ export function App() {
             <OverpaymentChart schedule={result.schedule}
               baseline={scenario.prepayments.length > 0 ? result.baseline : undefined} />
           </section>
+
+          {state.scenarios.length > 1 && (
+            <ComparisonSection state={state} results={results} currency={currency}
+              onToggle={(id) => setState((st) => toggleCompared(st, id))} />
+          )}
 
           <section className="card">
             <h2>Куда уходят платежи по годам</h2>

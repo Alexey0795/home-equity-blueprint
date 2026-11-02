@@ -47,7 +47,7 @@ export function OverpaymentChart({ schedule, baseline }: Props) {
           formatter={(value) => formatMoney(Number(value))}
           labelFormatter={(m) => `Месяц ${String(m)}`}
         />
-        <Legend />
+        <Legend itemSorter={null} />
         <Area type="monotone" dataKey="cumulativeInterest" name="Переплата нарастающим итогом"
           stroke={COLORS.interest} fill={COLORS.interest} fillOpacity={0.35} isAnimationActive={false} />
         {baseline && (
