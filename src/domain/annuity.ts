@@ -29,7 +29,7 @@ function validateRate(annualRatePct: number): void {
 }
 
 /** Платёж, который погасит balance ровно за months месяцев при месячной ставке r. */
-function levelPayment(balance: number, r: number, months: number): number {
+export function levelPayment(balance: number, r: number, months: number): number {
   if (r === 0) return balance / months;
   return (balance * r) / (1 - Math.pow(1 + r, -months));
 }
@@ -80,7 +80,7 @@ function validatePrepayments(prepayments: PrepaymentPlan[]): void {
 }
 
 /** Сколько месяцев нужно, чтобы погасить balance платежом payment при месячной ставке r (вверх до целого). */
-function monthsToRepay(balance: number, r: number, payment: number): number {
+export function monthsToRepay(balance: number, r: number, payment: number): number {
   if (r === 0) return Math.ceil(balance / payment - 1e-9);
   return Math.ceil(-Math.log(1 - (balance * r) / payment) / Math.log(1 + r) - 1e-9);
 }

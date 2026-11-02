@@ -13,6 +13,8 @@ interface Props {
   bare?: boolean;
   /** Если поле — сумма в валюте: при наведении подсказка с другими валютами. */
   currency?: Currency;
+  /** Серый текст в пустом поле. */
+  placeholder?: string;
 }
 
 /**
@@ -20,7 +22,7 @@ interface Props {
  * Пока поле в фокусе, текст не переформатируется (не прыгает курсор); при уходе — снова с разрядами.
  * Стрелки ↑/↓ меняют значение на шаг.
  */
-export function NumberField({ label, value, onChange, step = 1, min = 0, bare = false, currency }: Props) {
+export function NumberField({ label, value, onChange, step = 1, min = 0, bare = false, currency, placeholder }: Props) {
   const [draft, setDraft] = useState<string | null>(null);
   const tip = useCurrencyTip(value, currency);
   const text = draft ?? formatNumberInput(value);
@@ -39,6 +41,7 @@ export function NumberField({ label, value, onChange, step = 1, min = 0, bare = 
       type="text"
       inputMode="decimal"
       autoComplete="off"
+      placeholder={placeholder}
       aria-label={bare ? label : undefined}
       value={text}
       onFocus={() => setDraft(formatNumberInput(value))}

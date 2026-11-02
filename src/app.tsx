@@ -38,6 +38,7 @@ import { formatDate, formatMonthYear, formatTerm, toRoman } from './ui/format';
 import { BigMoney, FxContext, Money } from './ui/Money';
 import { FREE_VARIABLE_HINTS, FreeVariablePicker } from './ui/FreeVariablePicker';
 import { NumberField } from './ui/NumberField';
+import { LoanSection } from './ui/LoanSection';
 import { ProductsSection } from './ui/ProductsSection';
 import { ProfileSwitcher } from './ui/ProfileSwitcher';
 import { SavingsSection } from './ui/SavingsSection';
@@ -388,6 +389,8 @@ export function App() {
           </section>
         </>
       )}
+
+      <LoanSection loans={profile.loans} onChange={(loans) => setProfile((p) => ({ ...p, loans }))} />
 
       <div id="components">
         <ComponentsSection

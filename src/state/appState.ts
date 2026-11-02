@@ -7,7 +7,8 @@
  * - сценарий ссылается на компоненты по id; правка компонента меняет все сценарии, где он используется.
  *
  * Версии 1–6 читаются в legacy.ts и переносятся в профиль «Я» (migrateLegacy).
- * 7 — профили и компоненты; 8 — дата выдачи кредита у сценария (календарь платежей), в v7 её нет → null.
+ * 7 — профили и компоненты; 8 — дата выдачи кредита у сценария (календарь платежей), в v7 её нет → null;
+ * 9 — реальные кредиты с журналом событий у профиля (`loans`), в v7–8 их нет → [].
  * При несовместимом изменении формата — поднять STATE_VERSION и дописать миграцию.
  */
 
@@ -25,10 +26,11 @@ import {
   uniqueIds,
   type Raw,
 } from './parse';
+import { parseLoan, type RealLoan } from './loans';
 import { parseAccount, parseProduct } from './parseShared';
 import { sampleProducts } from './sampleProducts';
 
-export const STATE_VERSION = 8;
+export const STATE_VERSION = 9;
 
 /** Квартира — компонент: цена в своей валюте (она же валюта сделки). */
 export interface Apartment {
@@ -95,6 +97,8 @@ export interface Profile {
   activeScenarioId: string;
   /** id сценариев на графике сравнения. */
   comparedScenarioIds: string[];
+  /** Реальные (взятые) кредиты с хроникой событий. */
+  loans: RealLoan[];
 }
 
 export interface AppState {
@@ -193,6 +197,7 @@ export function newProfile(name: string): Profile {
     scenarios: [],
     activeScenarioId: '',
     comparedScenarioIds: [],
+    loans: [],
   };
   const scenario = newScenario(base, 'Основной');
   return { ...base, scenarios: [scenario], activeScenarioId: scenario.id };
@@ -364,6 +369,7 @@ export function migrateLegacy(legacy: LegacyState): AppState {
     scenarios,
     activeScenarioId: legacy.activeScenarioId,
     comparedScenarioIds: legacy.comparedScenarioIds,
+    loans: [],
   };
   return {
     version: STATE_VERSION,
@@ -494,7 +500,14 @@ function parseProfile(raw: unknown, index: number, productIds: Set<string>): Pro
     scenarios,
     activeScenarioId,
     comparedScenarioIds,
+    // До версии 9 реальных кредитов не было.
+    loans: Array.isArray(r.loans) ? uniqueLoans(r.loans.map((x, i) => parseLoan(x, i, where))) : [],
   };
+}
+
+function uniqueLoans(loans: RealLoan[]): RealLoan[] {
+  uniqueIds(loans, 'реальных кредитов');
+  return loans;
 }
 
 function parseCurrent(r: Raw): AppState {

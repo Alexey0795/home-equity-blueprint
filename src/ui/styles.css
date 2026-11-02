@@ -330,3 +330,24 @@ td [data-tip]:hover::after { left: auto; right: 0; }
 .month-date { display: block; margin-top: 2px; font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
 .phases li { flex-wrap: wrap; column-gap: 8px; }
 .phases strong { white-space: nowrap; }
+
+/* --- Хроника реального кредита --- */
+.loan { padding: 14px; margin: 12px 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.loan-summary { margin-top: 14px; }
+.loan-summary.forecast { padding-top: 12px; border-top: 1px dashed var(--border); }
+.loan-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.journal td { vertical-align: top; }
+.journal input[type='date'] { width: 150px; }
+.journal td .money-input input { min-width: 0; width: 100%; }
+.journal td:nth-child(2) { width: 110px; }
+.journal td.when { text-align: left; }
+.journal .kind { display: block; margin-top: 2px; font-size: 0.78rem; font-weight: 600; color: var(--text-2); }
+.journal td.details { text-align: left; white-space: normal; min-width: 160px; }
+.journal .statement { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.journal .statement small { grid-column: 1 / -1; }
+.journal tr.ev-prepayment .kind { color: var(--ok); }
+.journal tr.ev-rate .kind { color: var(--warn); }
+.journal .chip { display: block; width: fit-content; margin: 2px 0 0 auto; }
+.loan-summary .chip { white-space: normal; }
+.journal input[type='date'] { width: 136px; padding: 7px 6px; }
+.journal input::placeholder { color: var(--muted); font-size: 0.85rem; }

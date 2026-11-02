@@ -22,6 +22,7 @@ import {
   toggleCompared,
   type AppState,
 } from './appState';
+import { newLoan, newLoanEvent } from './loans';
 
 const roundTrip = (state: AppState) => parseState(serializeState(state));
 
@@ -80,7 +81,7 @@ describe('миграция старых версий в профиль «Я»', 
       activeScenarioId: 's1',
       scenarios: [{ id: 's1', name: 'Старый', price: 300_000, downPayment: 60_000, annualRatePct: 12, termMonths: 240 }],
     }));
-    expect(state.version).toBe(8);
+    expect(state.version).toBe(9);
     const profile = activeProfile(state);
     expect(profile.name).toBe('Я');
     expect(profile.apartments).toEqual([expect.objectContaining({ currency: 'BYN', price: 300_000 })]);
@@ -215,5 +216,24 @@ describe('версия 8: дата выдачи кредита', () => {
     raw.version = 8;
     raw.profiles[0].scenarios[0].issueDate = '2027-02-30';
     expect(activeScenario(activeProfile(parseState(JSON.stringify(raw)))).issueDate).toBeNull();
+  });
+});
+
+describe('версия 9: реальные кредиты', () => {
+  it('данные v8 открываются без кредитов; кредит с журналом переживает сохранение; битая дата события — понятная ошибка', () => {
+    const raw = JSON.parse(serializeState(defaultState()));
+    raw.version = 8;
+    delete raw.profiles[0].loans;
+    expect(activeProfile(parseState(JSON.stringify(raw))).loans).toEqual([]);
+
+    const state = defaultState();
+    const loan = newLoan('2027-01-15');
+    loan.events = [newLoanEvent('payment', '2027-02-15', 3_000), newLoanEvent('prepayment', '2027-03-01', 20_000), newLoanEvent('rate', '2027-06-01')];
+    activeProfile(state).loans = [loan];
+    expect(activeProfile(roundTrip(state)).loans).toEqual([loan]);
+
+    const bad = JSON.parse(serializeState(state));
+    bad.profiles[0].loans[0].events[0].date = '2027-02-30';
+    expect(() => parseState(JSON.stringify(bad))).toThrow('событие №1: Такой даты нет');
   });
 });

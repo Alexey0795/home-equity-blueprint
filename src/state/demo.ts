@@ -64,6 +64,7 @@ export function demoState(): AppState {
     scenarios,
     activeScenarioId: scenarios[0]!.id,
     comparedScenarioIds: scenarios.map((s) => s.id),
+    loans: [],
   };
   return {
     version: STATE_VERSION,
