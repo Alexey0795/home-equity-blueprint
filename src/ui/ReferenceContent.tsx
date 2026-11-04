@@ -88,7 +88,7 @@ export function ReferenceContent() {
                 <td className="ref-changes">
                   {y.changes.length === 0
                     ? 'без изменений'
-                    : y.changes.map((c) => <span key={c.from}>{monthTitle(c.from)}: <strong>{pct.format(c.ratePct)}%</strong></span>)}
+                    : y.changes.map((c) => <span key={c.from}>{Number(c.from.slice(8, 10))} {MONTHS[Number(c.from.slice(5, 7)) - 1]} <strong>{pct.format(c.ratePct)}%</strong></span>)}
                 </td>
               </tr>
             ))}

@@ -57,6 +57,20 @@ export function RentHistorySection({ plan, onChange, fxRates, scenarioRatePct, p
   const rate = Number.isFinite(plan.loanRatePct) ? plan.loanRatePct : scenarioRatePct;
   const byPeriods = plan.ratePeriods.length > 0;
   const historyFx = plan.fxMode === 'history' && FX_HISTORY.length > 0;
+  const sortedRates = [...plan.ratePeriods].sort((a, b) => a.from.localeCompare(b.from));
+
+  /** Ставки «СР + надбавка» с первого месяца аренды: действовавшая на тот момент — с него, дальше — все изменения. */
+  function fillFromRefinancing() {
+    if (plan.ratePeriods.length > 0 && !window.confirm('Заменить ставки по периодам историей ставки рефинансирования?')) return;
+    const all = ratePeriodsFromHistory(REFINANCING_RATE_HISTORY, Number.isFinite(margin) ? margin : 0);
+    const start = plan.periods.map((p) => p.from).sort()[0];
+    let list = all;
+    if (start) {
+      const inForce = all.filter((p) => p.from <= start).at(-1);
+      list = [...(inForce ? [{ ...inForce, from: start }] : []), ...all.filter((p) => p.from > start)];
+    }
+    set({ ratePeriods: list.map((p) => ({ id: newId(), ...p })) });
+  }
   const asOf = thisMonth();
   const lastTo = plan.periods.reduce<string | null>((m, p) => (p.to && (!m || p.to > m) ? p.to : m), null);
 
@@ -180,32 +194,41 @@ export function RentHistorySection({ plan, onChange, fxRates, scenarioRatePct, p
         Если ставка менялась: с какого месяца какая. Пусто — одна ставка на всё время (поле выше). Ставка рефинансирования —
         ориентир для кредитов в BYN; для расчёта в USD или EUR ставки обычно ниже.
       </p>
-      <div className="tranches">
-        {[...plan.ratePeriods].sort((a, b) => a.from.localeCompare(b.from)).map((p, i) => (
-          <div className="tranche" key={p.id}>
-            <label className="field">
-              <span>С месяца</span>
-              <input type="month" value={p.from} onChange={(e) => e.target.value && setRatePeriod(p.id, { from: e.target.value })} />
-            </label>
-            <NumberField label="Ставка, % годовых" value={p.ratePct} step={0.5} onChange={(ratePct) => setRatePeriod(p.id, { ratePct })} />
-            <span />
-            <button type="button" className="icon" aria-label={`Удалить ставку ${i + 1}`}
-              onClick={() => set({ ratePeriods: plan.ratePeriods.filter((x) => x.id !== p.id) })}>✕</button>
+      {plan.ratePeriods.length > 0 && (
+        <details className="rate-periods" open={plan.ratePeriods.length <= 8}>
+          <summary>
+            Ставок: {plan.ratePeriods.length}
+            {sortedRates.length > 0 && <> · {sortedRates[0]!.ratePct.toLocaleString('ru-RU')}% с {sortedRates[0]!.from}
+              {sortedRates.length > 1 && <> … {sortedRates.at(-1)!.ratePct.toLocaleString('ru-RU')}% с {sortedRates.at(-1)!.from}</>}</>}
+          </summary>
+          <div className="rate-grid">
+            {sortedRates.map((p, i) => (
+              <div className="rate-item" key={p.id}>
+                <input type="month" aria-label={`Ставка ${i + 1}: с месяца`} value={p.from}
+                  onChange={(e) => e.target.value && setRatePeriod(p.id, { from: e.target.value })} />
+                <NumberField bare label={`Ставка ${i + 1}, % годовых`} value={p.ratePct} step={0.5} onChange={(ratePct) => setRatePeriod(p.id, { ratePct })} />
+                <span className="muted">%</span>
+                <button type="button" className="icon" aria-label={`Удалить ставку ${i + 1}`}
+                  onClick={() => set({ ratePeriods: plan.ratePeriods.filter((x) => x.id !== p.id) })}>✕</button>
+              </div>
+            ))}
           </div>
-        ))}
+        </details>
+      )}
+      <div className="fill-refinancing">
         <button type="button" onClick={() => set({ ratePeriods: [...plan.ratePeriods, { id: newId(), from: asOf, ratePct: rate }] })}>
           + Добавить ставку
         </button>
+        {plan.ratePeriods.length > 0 && (
+          <button type="button" onClick={() => window.confirm('Удалить все ставки по периодам?') && set({ ratePeriods: [] })}>
+            Очистить
+          </button>
+        )}
         {REFINANCING_RATE_HISTORY.length > 0 && (
-          <div className="fill-refinancing">
+          <>
             <NumberField label="Надбавка к ставке рефинансирования, п.п." value={margin} step={0.5} min={-50} onChange={setMargin} />
-            <button type="button" onClick={() => {
-              if (plan.ratePeriods.length > 0 && !window.confirm('Заменить ставки по периодам историей ставки рефинансирования?')) return;
-              set({ ratePeriods: ratePeriodsFromHistory(REFINANCING_RATE_HISTORY, Number.isFinite(margin) ? margin : 0).map((p) => ({ id: newId(), ...p })) });
-            }}>
-              Заполнить: ставка рефинансирования НБРБ + надбавка
-            </button>
-          </div>
+            <button type="button" onClick={fillFromRefinancing}>Заполнить: ставка рефинансирования НБРБ + надбавка</button>
+          </>
         )}
       </div>
       {body}
