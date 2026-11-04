@@ -99,12 +99,34 @@ describe('досрочка + смена ставки', () => {
 });
 
 describe('досрочка в период «только проценты»', () => {
-  it('уменьшает платёж, когда начнётся погашение; срок прежний', () => {
-    const io: VariableLoanParams = { ...base, termMonths: 24, interestOnlyMonths: 12 };
-    const s = buildSchedule({ ...io, prepayments: prepay('reduceTerm', 6, 500_000) });
+  const io: VariableLoanParams = { ...base, termMonths: 24, interestOnlyMonths: 12 };
+
+  it('«уменьшить платёж»: платёж после льготы — на меньший долг, срок прежний', () => {
+    const s = buildSchedule({ ...io, prepayments: prepay('reducePayment', 6, 500_000) });
     expect(s.rows[6]!.payment).toBeCloseTo(5_000, 6); // проценты с 500 000
     expect(kopecks(s.rows[12]!.payment)).toBe(kopecks(88_848.7886783416 / 2));
     expect(s.rows).toHaveLength(24);
+  });
+
+  it('«сократить срок»: платёж после льготы — как без взноса, кредит закрывается раньше', () => {
+    const s = buildSchedule({ ...io, prepayments: prepay('reduceTerm', 6, 500_000) });
+    expect(s.rows[6]!.payment).toBeCloseTo(5_000, 6);
+    // Платёж за 1 000 000 на 12 мес. под 1% в месяц — 88 848,79; 500 000 им гасятся за
+    // −ln(1 − 5 000 / 88 848,79) / ln(1,01) ≈ 5,8 → 6 месяцев.
+    expect(kopecks(s.rows[12]!.payment)).toBe(kopecks(88_848.7886783416));
+    expect(s.rows).toHaveLength(18);
+    expect(s.rows.at(-1)!.balance).toBe(0);
+  });
+});
+
+describe('взнос в день выдачи', () => {
+  it('«сократить срок»: платёж как у полного кредита, срок короче; «уменьшить платёж» — как кредит меньше', () => {
+    const term = buildSchedule({ ...base, atIssue: { amount: 500_000, mode: 'reduceTerm' } });
+    expect(kopecks(term.rows[0]!.payment)).toBe(kopecks(88_848.7886783416));
+    expect(term.rows).toHaveLength(6);
+    const pay = buildSchedule({ ...base, atIssue: { amount: 500_000, mode: 'reducePayment' } });
+    expect(kopecks(pay.rows[0]!.payment)).toBe(kopecks(88_848.7886783416 / 2));
+    expect(pay.rows).toHaveLength(12);
   });
 });
 

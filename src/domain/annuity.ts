@@ -100,9 +100,12 @@ const PAID_OFF = 1e-6;
  * «только проценты» или был досрочный взнос с режимом «уменьшить платёж». После взноса «сократить срок»
  * платёж остаётся прежним, а плановый последний месяц переносится ближе — и дальнейшие пересчёты
  * (например, при смене ставки) идут уже на сокращённый срок.
+ *
+ * Взносы до начала погашения (в период «только проценты» или в день выдачи — params.atIssue): «уменьшить платёж» —
+ * платёж посчитается на меньший долг; «сократить срок» — платёж (доля долга) будет как без взноса, а срок короче.
  */
 export function buildSchedule(params: VariableLoanParams): PaymentSchedule {
-  const { principal, termMonths, rateSteps, interestOnlyMonths, prepayments = [], repayment = 'annuity' } = params;
+  const { principal, termMonths, rateSteps, interestOnlyMonths, prepayments = [], repayment = 'annuity', atIssue } = params;
   const differentiated = repayment === 'differentiated';
   validatePrincipalAndTerm(principal, termMonths);
   validateSteps(rateSteps);
@@ -110,6 +113,9 @@ export function buildSchedule(params: VariableLoanParams): PaymentSchedule {
     throw new RangeError('Период «только проценты» должен быть целым числом месяцев, меньше срока кредита');
   }
   validatePrepayments(prepayments);
+  if (atIssue && (!Number.isFinite(atIssue.amount) || atIssue.amount < 0)) {
+    throw new RangeError('Взнос в день выдачи: сумма должна быть неотрицательным числом');
+  }
 
   const rows: ScheduleRow[] = [];
   let balance = principal;
@@ -121,6 +127,17 @@ export function buildSchedule(params: VariableLoanParams): PaymentSchedule {
   /** Плановый последний месяц: сдвигается раньше после взносов «сократить срок». */
   let endMonth = termMonths;
   let recalc = false;
+  /**
+   * Взносы «сократить срок», сделанные до начала погашения (в день выдачи или в период «только проценты»): когда
+   * погашение начнётся, платёж (доля долга) считается так, будто их не было, а срок — сколько нужно на меньший долг.
+   */
+  let termReduced = 0;
+
+  if (atIssue && atIssue.amount > 0) {
+    const amount = Math.min(atIssue.amount, balance);
+    balance -= amount;
+    if (atIssue.mode === 'reduceTerm') termReduced += amount;
+  }
 
   for (let month = 1; month <= endMonth; month++) {
     const annualRatePct = rateForMonth(rateSteps, month);
@@ -136,14 +153,24 @@ export function buildSchedule(params: VariableLoanParams): PaymentSchedule {
       // В последнем месяце гасим весь остаток, чтобы погрешность float не оставила «хвост» долга.
       principalPart = balance;
     } else if (differentiated) {
-      if (month === interestOnlyMonths + 1 || recalc) {
+      if (month === interestOnlyMonths + 1 && termReduced > 0) {
+        part = (balance + termReduced) / (endMonth - month + 1);
+        endMonth = Math.min(endMonth, month - 1 + Math.ceil(balance / part - 1e-9));
+        termReduced = 0;
+        recalc = false;
+      } else if (month === interestOnlyMonths + 1 || recalc) {
         part = balance / (endMonth - month + 1);
         recalc = false;
       }
       principalPart = Math.min(part, balance);
     } else {
       const amortizationStarts = month === interestOnlyMonths + 1;
-      if (amortizationStarts || annualRatePct !== prevRate || recalc) {
+      if (amortizationStarts && termReduced > 0) {
+        payment = levelPayment(balance + termReduced, r, endMonth - month + 1);
+        endMonth = Math.min(endMonth, month - 1 + monthsToRepay(balance, r, payment));
+        termReduced = 0;
+        recalc = false;
+      } else if (amortizationStarts || annualRatePct !== prevRate || recalc) {
         payment = levelPayment(balance, r, endMonth - month + 1);
         recalc = false;
       }
@@ -160,9 +187,12 @@ export function buildSchedule(params: VariableLoanParams): PaymentSchedule {
       balance -= amount;
       prepayment += amount;
       if (balance <= PAID_OFF) break;
-      if (plan.mode === 'reducePayment' || interestOnly) {
-        // В период «только проценты» сокращать нечего — взнос уменьшит платёж, когда начнётся погашение.
-        recalc = !interestOnly;
+      if (interestOnly) {
+        // До начала погашения: «уменьшить платёж» — платёж посчитается на меньший долг, когда начнётся погашение;
+        // «сократить срок» — платёж будет как без взноса, а срок короче.
+        if (plan.mode === 'reduceTerm') termReduced += amount;
+      } else if (plan.mode === 'reducePayment') {
+        recalc = true;
       } else {
         endMonth = Math.min(
           endMonth,

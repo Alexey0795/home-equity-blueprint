@@ -351,3 +351,46 @@ td [data-tip]:hover::after { left: auto; right: 0; }
 .loan-summary .chip { white-space: normal; }
 .journal input[type='date'] { width: 136px; padding: 7px 6px; }
 .journal input::placeholder { color: var(--muted); font-size: 0.85rem; }
+
+/* --- Цена промедления --- */
+.help-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.help-head h2 { margin-bottom: 0; }
+.help-timing .fields { margin-top: 12px; }
+.delay-field { grid-column: span 2; }
+@media (max-width: 520px) { .delay-field { grid-column: auto; } }
+.delay-field input[type='range'] { padding: 0; border: none; box-shadow: none; accent-color: var(--interest); }
+.delay-field strong { color: var(--interest); font-variant-numeric: tabular-nums; }
+.help-summary { margin-top: 16px; }
+.help-summary .chip { display: inline-block; margin-top: 2px; font-size: 0.78rem; white-space: normal; max-width: 100%; }
+.ticker-line { margin: 14px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--warn-soft); color: var(--text-2); }
+.ticker { font-weight: 700; color: var(--interest); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.month-grid { display: flex; flex-direction: column; gap: 3px; max-width: 520px; }
+.month-row { display: grid; grid-template-columns: 2.2em repeat(12, 1fr); gap: 3px; align-items: stretch; }
+.month-year { font-size: 0.7rem; color: var(--muted); text-align: right; padding-right: 4px; align-self: center; }
+.cell {
+  position: relative; height: 16px; border-radius: 3px; background: var(--surface-3); overflow: hidden;
+  transition: background 0.3s var(--ease), box-shadow 0.3s var(--ease);
+}
+.cell.empty { background: none; }
+.cell i { position: absolute; left: 0; right: 0; bottom: 0; }
+.cell .ghost { background: var(--interest); opacity: 0.22; }
+.cell .fill { background: var(--interest); opacity: 0.85; transition: height 0.3s var(--ease); }
+.cell.gone { background: var(--ok); }
+.cell.gone .ghost { opacity: 0; }
+.cell.arrival { box-shadow: 0 0 0 2px var(--accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .cell.gone { animation: cleared 0.45s var(--ease) both; }
+  @keyframes cleared { from { transform: scale(0.6); opacity: 0.3; } to { transform: none; opacity: 1; } }
+}
+
+.explain { margin-top: 14px; }
+.explain summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+.explain p { font-size: 0.9rem; line-height: 1.5; color: var(--text-2); }
+
+/* Режим презентации: блок на весь экран, крупнее. */
+.help-timing:fullscreen { overflow: auto; padding: 32px max(24px, 6vw); border-radius: 0; background: var(--bg); font-size: 1.1rem; }
+.help-timing:fullscreen .summary strong { font-size: 1.8rem; }
+.help-timing:fullscreen .month-grid { max-width: 760px; }
+.help-timing:fullscreen .cell { height: 22px; }
+.ticker-line .money { white-space: nowrap; }

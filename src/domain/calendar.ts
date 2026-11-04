@@ -36,6 +36,19 @@ export function toIsoDate({ year, month, day }: CalendarDate): string {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+const dayNumber = (d: CalendarDate) => Math.round(Date.UTC(d.year, d.month - 1, d.day) / 86_400_000);
+
+/** Сколько дней от from до to (to − from; одна и та же дата → 0). */
+export function daysBetween(from: CalendarDate, to: CalendarDate): number {
+  return dayNumber(to) - dayNumber(from);
+}
+
+/** Дата + N дней. */
+export function addDays(date: CalendarDate, days: number): CalendarDate {
+  const d = new Date(Date.UTC(date.year, date.month - 1, date.day + days));
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+}
+
 /** Дата + N месяцев; день прижимается к концу месяца, если такого числа нет. */
 export function addMonths(date: CalendarDate, months: number): CalendarDate {
   const total = date.year * 12 + (date.month - 1) + months;

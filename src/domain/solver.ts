@@ -1,6 +1,6 @@
 import { buildSchedule } from './annuity';
 import { productRateSteps, type CreditProduct } from './products';
-import type { PaymentSchedule, PrepaymentPlan, RateStep, Repayment } from './types';
+import type { PaymentSchedule, PrepaymentPlan, RateStep, Repayment, VariableLoanParams } from './types';
 
 /**
  * Режим «зафиксировать всё, кроме одного»: одна величина свободна, остальные заданы, свободная вычисляется.
@@ -60,16 +60,21 @@ function rateSteps(rate: RateSource): RateStep[] {
     : productRateSteps(rate.product, rate.refinancingRatePct);
 }
 
-/** График для сделки как есть, без решателя. */
-export function scheduleForDeal(deal: DealInput, principal = Math.max(0, deal.price - deal.downPayment)): PaymentSchedule {
-  return buildSchedule({
+/** Параметры графика для сделки как есть (без решателя). */
+export function loanParamsForDeal(deal: DealInput, principal = Math.max(0, deal.price - deal.downPayment)): VariableLoanParams {
+  return {
     principal,
     termMonths: deal.termMonths,
     rateSteps: rateSteps(deal.rate),
     interestOnlyMonths: deal.rate.kind === 'product' ? deal.rate.product.interestOnlyMonths : 0,
     prepayments: deal.prepayments,
     repayment: deal.repayment,
-  });
+  };
+}
+
+/** График для сделки как есть, без решателя. */
+export function scheduleForDeal(deal: DealInput, principal = Math.max(0, deal.price - deal.downPayment)): PaymentSchedule {
+  return buildSchedule(loanParamsForDeal(deal, principal));
 }
 
 const unsolvable = (why: string) => new RangeError(`Не сходится: ${why}`);

@@ -3,6 +3,7 @@ import {
   checkDealAgainstProduct,
   convert,
   loanAmount,
+  loanParamsForDeal,
   maxPayment,
   paymentHeadroom,
   paymentDate,
@@ -39,6 +40,7 @@ import { formatDate, formatMonthYear, formatTerm, toRoman } from './ui/format';
 import { BigMoney, FxContext, Money } from './ui/Money';
 import { FREE_VARIABLE_HINTS, FreeVariablePicker } from './ui/FreeVariablePicker';
 import { NumberField } from './ui/NumberField';
+import { HelpTimingSection } from './ui/HelpTimingSection';
 import { LoanSection } from './ui/LoanSection';
 import { ProductsSection } from './ui/ProductsSection';
 import { ProfileSwitcher } from './ui/ProfileSwitcher';
@@ -154,6 +156,9 @@ export function App() {
   const issueDate = inputs.issueDate;
   /** Подпись месяца платежа: «мар 2028», если задана дата выдачи, иначе «мес. 14». */
   const monthLabel = (m: number) => (issueDate ? formatMonthYear(paymentDate(issueDate, m)) : `мес. ${m}`);
+
+  /** Кредит сценария как есть — вход для «Цены промедления»; объект один на расчёт, чтобы не пересчитывать кривую зря. */
+  const helpLoan = useMemo(() => ('error' in result ? null : loanParamsForDeal(result.deal)), [result]);
 
   const apartmentShared = sharedNote(scenariosUsing(profile, (s) => s.apartmentId === apartment.id));
   const downValue = scenario.downPayment.kind === 'manual' ? 'manual' : scenario.downPayment.planId;
@@ -407,6 +412,10 @@ export function App() {
             <OverpaymentChart schedule={result.schedule} baseline={inputs.prepayments.length > 0 ? result.baseline : undefined}
               issueDate={issueDate} />
           </section>
+
+          {loan > 0 && (
+            <HelpTimingSection loan={helpLoan!} noHelp={result.schedule} currency={currency} issueDate={issueDate} />
+          )}
         </>
       )}
 
