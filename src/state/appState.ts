@@ -13,7 +13,8 @@
  * 11 — дополнительная сумма на квартиру у профиля (`help`: заём траншами, возврат, инфляция, эквиваленты),
  *      в v7–10 её нет → newHelpPlan();
  * 12 — у `help` ставка вклада для сравнения, аренда в месяц, сколько откладываю в месяц и флаг `repay`
- *      (сумма — заём, который возвращается); в v11 → по умолчанию, `repay` = true (в v11 заём был всегда).
+ *      (сумма — заём, который возвращается); в v11 → по умолчанию, `repay` = true (в v11 заём был всегда);
+ * 13 — повторяющиеся транши (`help.recurring`), «Копить» (`saving`) и аренда в прошлом (`rent`) у профиля; раньше → пусто.
  * При несовместимом изменении формата — поднять STATE_VERSION и дописать миграцию.
  */
 
@@ -35,7 +36,7 @@ import { parseLoan, type RealLoan } from './loans';
 import { parseAccount, parseProduct } from './parseShared';
 import { sampleProducts } from './sampleProducts';
 
-export const STATE_VERSION = 12;
+export const STATE_VERSION = 13;
 
 /** Квартира — компонент: цена в своей валюте (она же валюта сделки). */
 export interface Apartment {
@@ -108,6 +109,54 @@ export interface Profile {
   loans: RealLoan[];
   /** Дополнительная сумма на первый взнос и досрочку (заём) — для «Цены промедления», сравнения и рассказа. */
   help: HelpPlan;
+  /** Ракурс «Копить»: копить на вкладе до полной цены квартиры вместо кредита. */
+  saving: SavePlan;
+  /** Ракурс «Аренда»: периоды аренды в прошлом. */
+  rent: RentPlan;
+}
+
+/** «Копить»: NaN в start / monthly — брать из выбранного сценария (первый взнос, первый платёж). Суммы — в валюте плана. */
+export interface SavePlan {
+  currency: Currency;
+  start: number;
+  monthly: number;
+  depositRatePct: number;
+  priceGrowthPct: number;
+  rentPerMonth: number;
+}
+
+export interface RentPeriodItem {
+  id: string;
+  /** «ГГГГ-ММ». */
+  from: string;
+  /** «ГГГГ-ММ»; null — по сей день. */
+  to: string | null;
+  amount: number;
+  currency: Currency;
+}
+
+/** Аренда в прошлом: периоды; итог и эквивалентный кредит — в currency; ставка NaN — как в выбранном сценарии. */
+export interface RentPlan {
+  periods: RentPeriodItem[];
+  currency: Currency;
+  loanRatePct: number;
+}
+
+/** Повторяющийся транш: «каждые everyMonths мес. по amount, с fromMonth по toMonth». */
+export interface RecurringTranche {
+  id: string;
+  fromMonth: number;
+  toMonth: number;
+  everyMonths: number;
+  amount: number;
+}
+
+export function newSavePlan(currency: Currency = 'BYN'): SavePlan {
+  return { currency, start: Number.NaN, monthly: Number.NaN, depositRatePct: 10, priceGrowthPct: 5, rentPerMonth: Number.NaN };
+}
+
+export function newRentPlan(): RentPlan {
+  return { periods: [], currency: 'USD', loanRatePct: Number.NaN };
 }
 
 /** Транш: month 0 — в первый взнос (до сделки), k ≥ 1 — после k-го платежа банку. */
@@ -128,6 +177,7 @@ export interface Equivalent {
 export interface HelpPlan {
   currency: Currency;
   tranches: HelpTranche[];
+  recurring: RecurringTranche[];
   /** Сумма — частный заём, который возвращается по условиям ниже; false — свои деньги, возвращать нечего. */
   repay: boolean;
   /** % годовых по займу; 0 — беспроцентный. */
@@ -153,6 +203,7 @@ export function newHelpPlan(currency: Currency = 'BYN'): HelpPlan {
   return {
     currency,
     tranches: [],
+    recurring: [],
     repay: false,
     ratePct: 0,
     graceMonths: 12,
@@ -269,6 +320,8 @@ export function newProfile(name: string): Profile {
     comparedScenarioIds: [],
     loans: [],
     help: newHelpPlan(),
+    saving: newSavePlan(),
+    rent: newRentPlan(),
   };
   const scenario = newScenario(base, 'Основной');
   return { ...base, scenarios: [scenario], activeScenarioId: scenario.id };
@@ -345,6 +398,30 @@ export function duplicateScenario(profile: Profile, id: string): Profile {
   const scenarios = [...profile.scenarios];
   scenarios.splice(index + 1, 0, copy);
   return { ...profile, scenarios, activeScenarioId: copy.id };
+}
+
+/**
+ * «Сравнить все банки»: для каждой карточки, которой ещё нет в сценариях с той же квартирой, — копия сценария с этой
+ * карточкой (график — как в банке, считаем платёж). Новые сценарии встают в конец и попадают в сравнение, пока есть место.
+ */
+export function scenariosForProducts(profile: Profile, id: string, productIds: string[], names: Map<string, string>): Profile {
+  const source = profile.scenarios.find((s) => s.id === id);
+  if (!source) return profile;
+  const used = new Set(profile.scenarios.filter((s) => s.apartmentId === source.apartmentId).map((s) => s.productId));
+  const added: Scenario[] = productIds
+    .filter((pid) => !used.has(pid))
+    .map((pid) => ({
+      ...structuredClone(source),
+      id: newId(),
+      name: names.get(pid) || 'Банк',
+      productId: pid,
+      repayment: null,
+      freeVariable: 'payment' as const,
+    }));
+  const compared = [...profile.comparedScenarioIds];
+  if (!compared.includes(source.id) && compared.length < MAX_COMPARED) compared.push(source.id);
+  for (const s of added) if (compared.length < MAX_COMPARED) compared.push(s.id);
+  return { ...profile, scenarios: [...profile.scenarios, ...added], comparedScenarioIds: compared };
 }
 
 /** Последний сценарий не удаляется. Если удалён активный — активным становится соседний. */
@@ -443,6 +520,8 @@ export function migrateLegacy(legacy: LegacyState): AppState {
     comparedScenarioIds: legacy.comparedScenarioIds,
     loans: [],
     help: newHelpPlan(),
+    saving: newSavePlan(),
+    rent: newRentPlan(),
   };
   return {
     version: STATE_VERSION,
@@ -578,7 +657,40 @@ function parseProfile(raw: unknown, index: number, productIds: Set<string>): Pro
     loans: Array.isArray(r.loans) ? uniqueLoans(r.loans.map((x, i) => parseLoan(x, i, where))) : [],
     // До версии 11 дополнительной суммы не было.
     help: r.help === undefined ? newHelpPlan() : parseHelpPlan(r.help, where),
+    // До версии 13 «Копить» и аренды не было.
+    saving: r.saving === undefined ? newSavePlan() : parseSavePlan(r.saving, where),
+    rent: r.rent === undefined ? newRentPlan() : parseRentPlan(r.rent, where),
   };
+}
+
+function parseSavePlan(raw: unknown, where: string): SavePlan {
+  const w = `${where}, «Копить»`;
+  const r = asObject(raw, w);
+  return {
+    currency: readCurrency(r, w),
+    start: readNumber(r, 'start', w),
+    monthly: readNumber(r, 'monthly', w),
+    depositRatePct: readNumber(r, 'depositRatePct', w),
+    priceGrowthPct: readNumber(r, 'priceGrowthPct', w),
+    rentPerMonth: readNumber(r, 'rentPerMonth', w),
+  };
+}
+
+const MONTH_TEXT = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+function parseRentPlan(raw: unknown, where: string): RentPlan {
+  const w = `${where}, аренда`;
+  const r = asObject(raw, w);
+  const periods = asArray(r, 'periods', w).map((item, i): RentPeriodItem => {
+    const iw = `${w}, период №${i + 1}`;
+    const x = asObject(item, iw);
+    const from = readString(x, 'from');
+    if (!MONTH_TEXT.test(from)) throw new RangeError(`${iw}: месяц «с» должен быть в виде ГГГГ-ММ`);
+    const to = typeof x.to === 'string' && MONTH_TEXT.test(x.to) ? x.to : null;
+    return { id: readId(x, iw), from, to, amount: readNumber(x, 'amount', iw), currency: readCurrency(x, iw) };
+  });
+  uniqueIds(periods, 'периодов аренды');
+  return { periods, currency: readCurrency(r, w), loanRatePct: readNumber(r, 'loanRatePct', w) };
 }
 
 function parseHelpPlan(raw: unknown, where: string): HelpPlan {
@@ -594,12 +706,24 @@ function parseHelpPlan(raw: unknown, where: string): HelpPlan {
     const x = asObject(item, iw);
     return { id: readId(x, iw), name: readString(x, 'name'), price: readNumber(x, 'price', iw) };
   });
-  uniqueIds(tranches, 'траншей');
+  const recurring = (Array.isArray(r.recurring) ? r.recurring : []).map((item, i): RecurringTranche => {
+    const iw = `${w}, повторяющийся транш №${i + 1}`;
+    const x = asObject(item, iw);
+    return {
+      id: readId(x, iw),
+      fromMonth: readNumber(x, 'fromMonth', iw),
+      toMonth: readNumber(x, 'toMonth', iw),
+      everyMonths: readNumber(x, 'everyMonths', iw),
+      amount: readNumber(x, 'amount', iw),
+    };
+  });
+  uniqueIds([...tranches, ...recurring], 'траншей');
   const defaults = newHelpPlan();
   uniqueIds(equivalents, 'эквивалентов');
   return {
     currency: readCurrency(r, w),
     tranches,
+    recurring,
     repay: typeof r.repay === 'boolean' ? r.repay : r.depositRatePct === undefined,
     ratePct: readNumber(r, 'ratePct', w),
     graceMonths: readNumber(r, 'graceMonths', w),

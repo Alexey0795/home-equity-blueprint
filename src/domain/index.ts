@@ -11,3 +11,5 @@ export * from './journal';
 export * from './helpTiming';
 export * from './privateLoan';
 export * from './placement';
+export * from './saveInstead';
+export * from './rentHistory';

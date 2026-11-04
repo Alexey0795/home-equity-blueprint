@@ -399,10 +399,12 @@ td [data-tip]:hover::after { left: auto; right: 0; }
 .tranches { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .tranche { display: grid; grid-template-columns: minmax(150px, 220px) minmax(150px, 220px) 1fr auto; gap: 10px; align-items: end; width: 100%; }
 .tranche > small { padding-bottom: 9px; }
+.tranche.recurring { grid-template-columns: repeat(4, minmax(110px, 170px)) auto; }
 @media (max-width: 620px) {
   .tranche { grid-template-columns: 1fr 1fr auto; }
   .tranche > small { grid-column: 1 / -1; grid-row: 2; padding: 0; }
   .tranche > span:empty { display: none; }
+  .tranche.recurring { grid-template-columns: 1fr 1fr; }
 }
 .privateLoan-help .fields { margin-top: 12px; }
 .privateLoan-honest {
@@ -479,3 +481,21 @@ td [data-tip]:hover::after { left: auto; right: 0; }
 .placement td:first-child { font-weight: 600; text-align: left; }
 .placement td:last-child { text-align: left; white-space: normal; color: var(--text-2); min-width: 180px; }
 .placement-mortgage td { background: var(--ok-soft); }
+
+/* --- Ракурсы (вкладки) --- */
+.angles {
+  display: flex; gap: 6px; overflow-x: auto; margin: 0 0 16px; padding: 4px; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-sm); scrollbar-width: thin;
+}
+.angles button {
+  flex: 1 0 auto; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 7px 12px;
+  border: none; background: none; border-radius: var(--radius-sm); text-align: left; min-width: 120px;
+}
+.angles button strong { font-size: 0.95rem; color: var(--text); }
+.angles button small { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+.angles button.on { background: var(--accent-soft); }
+.angles button.on strong { color: var(--accent-strong); }
+.angle-scenario { margin: 0 0 12px; font-size: 0.9rem; color: var(--text-2); }
+.rent-period { grid-template-columns: repeat(4, minmax(110px, 170px)) auto; }
+@media (max-width: 620px) { .rent-period { grid-template-columns: 1fr 1fr; } }
+.tranche > button.icon { justify-self: start; }

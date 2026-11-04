@@ -1,6 +1,6 @@
 import { Area, ComposedChart, CartesianGrid, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { paymentDate, type CalendarDate, type Currency, type PrepaymentMode } from '../domain';
-import { newId, type HelpPlan, type HelpTranche } from '../state/appState';
+import { newId, type HelpPlan, type HelpTranche, type RecurringTranche } from '../state/appState';
 import type { HelpEvaluation } from '../state/help';
 import { useChartColors } from './charts/colors';
 import { CurrencySelect } from './CurrencySelect';
@@ -101,6 +101,32 @@ function LoanByYear({ evaluation, currency }: { evaluation: HelpEvaluation; curr
   );
 }
 
+/** Вклад каждого транша по порядку: чем раньше транш, тем больше он убирает процентов. */
+function PerTrancheTable({ evaluation, issueDate }: { evaluation: HelpEvaluation; issueDate: CalendarDate | undefined }) {
+  const { perTranche, currency } = evaluation;
+  const n = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Когда</th><th>Сумма</th><th>Процентов меньше на</th><th>На 1 {currency}</th><th>Кредит короче</th></tr>
+        </thead>
+        <tbody>
+          {perTranche.map((t, i) => (
+            <tr key={i}>
+              <td>{t.month === 0 ? 'в первый взнос' : monthLabel(t.month, issueDate)}</td>
+              <td><Money value={t.amount} currency={currency} showCode={false} /></td>
+              <td><Money value={t.interestSaved} currency={currency} showCode={false} /></td>
+              <td>{n.format(t.interestSaved / (t.amount || 1))}</td>
+              <td>{t.monthsSaved > 0 ? formatTerm(t.monthsSaved) : '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /**
  * «Досрочка или вклад»: та же сумма наличными, на вкладе и в ипотеке — на дату конца кредита, номинально и в сегодняшних
  * деньгах. Для ипотеки освободившиеся платежи (и аренда) кладутся на тот же вклад — так сравнение честное.
@@ -167,6 +193,8 @@ export function ExtraSumSection({ plan, onChange, evaluation, issueDate, targetP
   const set = (patch: Partial<HelpPlan>) => onChange({ ...plan, ...patch });
   const setTranche = (id: string, patch: Partial<HelpTranche>) =>
     set({ tranches: plan.tranches.map((t) => (t.id === id ? { ...t, ...patch } : t)) });
+  const setRecurring = (id: string, patch: Partial<RecurringTranche>) =>
+    set({ recurring: plan.recurring.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
   const nextMonth = plan.tranches.length === 0 ? 0 : Math.max(...plan.tranches.map((t) => t.month)) + 12;
 
   const ok = evaluation && !('error' in evaluation) ? evaluation : null;
@@ -225,6 +253,24 @@ export function ExtraSumSection({ plan, onChange, evaluation, issueDate, targetP
         <small className="muted">0 — в первый взнос, до сделки; 12 — после 12-го платежа банку (через год).</small>
       </div>
 
+      <h3>Повторяющиеся транши</h3>
+      <div className="tranches">
+        {plan.recurring.map((r, i) => (
+          <div className="tranche recurring" key={r.id}>
+            <NumberField label="С платежа №" value={r.fromMonth} step={1} onChange={(v) => setRecurring(r.id, { fromMonth: Math.max(0, Math.round(v)) })} />
+            <NumberField label="По платёж №" value={r.toMonth} step={12} onChange={(v) => setRecurring(r.id, { toMonth: Math.max(0, Math.round(v)) })} />
+            <NumberField label="Каждые, мес." value={r.everyMonths} step={1} min={1} onChange={(v) => setRecurring(r.id, { everyMonths: Math.max(1, Math.round(v)) })} />
+            <NumberField label={`Сумма, ${plan.currency}`} value={r.amount} step={500} currency={plan.currency} onChange={(amount) => setRecurring(r.id, { amount })} />
+            <button type="button" className="icon" aria-label={`Удалить повторяющийся транш ${i + 1}`}
+              onClick={() => set({ recurring: plan.recurring.filter((x) => x.id !== r.id) })}>✕</button>
+          </div>
+        ))}
+        <button type="button" onClick={() => set({ recurring: [...plan.recurring, { id: newId(), fromMonth: 12, toMonth: 120, everyMonths: 12, amount: 5_000 }] })}>
+          + Добавить повторяющийся
+        </button>
+        <small className="muted">Например, раз в год (каждые 12 мес.) с 12-го по 120-й платёж — 10 взносов.</small>
+      </div>
+
       <label className="field checkbox repay-toggle">
         <input type="checkbox" checked={plan.repay} onChange={(e) => set({ repay: e.target.checked })} />
         <span>Сумма — частный заём, её нужно вернуть</span>
@@ -279,6 +325,13 @@ export function ExtraSumSection({ plan, onChange, evaluation, issueDate, targetP
               )}
             </div>
           </div>
+
+          {ok.perTranche.length > 1 && (
+            <>
+              <h3>Что даёт каждый транш</h3>
+              <PerTrancheTable evaluation={ok} issueDate={issueDate} />
+            </>
+          )}
 
           <h3>Досрочка или вклад</h3>
           <PlacementTable evaluation={ok} plan={plan} issueDate={issueDate} />

@@ -12,6 +12,7 @@ import {
   deleteScenario,
   duplicateScenario,
   MAX_COMPARED,
+  scenariosForProducts,
   newAccount,
   newPrepayment,
   newPrepaymentPlan,
@@ -81,7 +82,7 @@ describe('миграция старых версий в профиль «Я»', 
       activeScenarioId: 's1',
       scenarios: [{ id: 's1', name: 'Старый', price: 300_000, downPayment: 60_000, annualRatePct: 12, termMonths: 240 }],
     }));
-    expect(state.version).toBe(12);
+    expect(state.version).toBe(13);
     const profile = activeProfile(state);
     expect(profile.name).toBe('Я');
     expect(profile.apartments).toEqual([expect.objectContaining({ currency: 'BYN', price: 300_000 })]);
@@ -286,5 +287,50 @@ describe('версии 11–12: дополнительная сумма', () => 
     const bad = JSON.parse(serializeState(state));
     bad.profiles[0].help.tranches[1].amount = 'много';
     expect(() => parseState(JSON.stringify(bad))).toThrow('транш №2');
+  });
+});
+
+describe('версия 13: повторяющиеся транши, «Копить», аренда', () => {
+  it('v12 открывается с пустыми значениями; данные переживают сохранение; битый месяц аренды — понятная ошибка', () => {
+    const raw = JSON.parse(serializeState(defaultState()));
+    raw.version = 12;
+    delete raw.profiles[0].saving;
+    delete raw.profiles[0].rent;
+    delete raw.profiles[0].help.recurring;
+    const loaded = activeProfile(parseState(JSON.stringify(raw)));
+    expect(loaded.rent.periods).toEqual([]);
+    expect(loaded.help.recurring).toEqual([]);
+    expect(loaded.saving.priceGrowthPct).toBe(5);
+
+    const state = defaultState();
+    const p = activeProfile(state);
+    p.help.recurring = [{ id: 'r1', fromMonth: 12, toMonth: 120, everyMonths: 12, amount: 5_000 }];
+    p.rent.periods = [{ id: 'a', from: '2019-01', to: null, amount: 250, currency: 'USD' }];
+    p.saving.monthly = 2_000;
+    const back = activeProfile(roundTrip(state));
+    expect(back.help.recurring).toEqual(p.help.recurring);
+    expect(back.rent).toEqual(p.rent);
+    expect(back.saving.monthly).toBe(2_000);
+
+    const bad = JSON.parse(serializeState(state));
+    bad.profiles[0].rent.periods[0].from = '2019-13';
+    expect(() => parseState(JSON.stringify(bad))).toThrow('ГГГГ-ММ');
+  });
+});
+
+describe('scenariosForProducts', () => {
+  it('копия сценария на каждую карточку, кроме уже использованной; в сравнение — пока есть место', () => {
+    const state = defaultState();
+    const p = activeProfile(state);
+    const source = p.scenarios[0]!;
+    source.productId = state.products[0]!.id;
+    const ids = state.products.map((x) => x.id);
+    const names = new Map(state.products.map((x) => [x.id, x.name]));
+    const next = scenariosForProducts(p, source.id, ids, names);
+    expect(next.scenarios).toHaveLength(ids.length);
+    expect(next.scenarios.slice(1).map((s) => s.productId)).toEqual(ids.slice(1));
+    expect(next.scenarios[1]!.name).toBe(state.products[1]!.name);
+    expect(next.comparedScenarioIds.length).toBe(Math.min(MAX_COMPARED, ids.length));
+    expect(scenariosForProducts(next, source.id, ids, names).scenarios).toHaveLength(ids.length);
   });
 });

@@ -21,6 +21,7 @@ import {
   deleteProfile,
   deleteScenario,
   duplicateScenario,
+  scenariosForProducts,
   scenariosUsing,
   toggleCompared,
   updateProfile,
@@ -41,6 +42,7 @@ import { formatDate, formatMonthYear, formatTerm, toRoman } from './ui/format';
 import { BigMoney, FxContext, Money } from './ui/Money';
 import { FREE_VARIABLE_HINTS, FreeVariablePicker } from './ui/FreeVariablePicker';
 import { NumberField } from './ui/NumberField';
+import { AngleTabs, ANGLES_WITH_SCENARIO, useAngle } from './ui/AngleTabs';
 import { DebtRace } from './ui/DebtRace';
 import { ExtraSumSection } from './ui/ExtraSumSection';
 import { HelpTimingSection } from './ui/HelpTimingSection';
@@ -48,6 +50,8 @@ import { StoryMode } from './ui/StoryMode';
 import { LoanSection } from './ui/LoanSection';
 import { ProductsSection } from './ui/ProductsSection';
 import { ProfileSwitcher } from './ui/ProfileSwitcher';
+import { RentHistorySection } from './ui/RentHistorySection';
+import { SaveInsteadSection } from './ui/SaveInsteadSection';
 import { SavingsSection } from './ui/SavingsSection';
 import { ScenarioBar } from './ui/ScenarioBar';
 import { ScenarioDock } from './ui/ScenarioDock';
@@ -171,6 +175,7 @@ export function App() {
   );
   const helpOk = helpEval && !('error' in helpEval) ? helpEval : null;
   const [storyOpen, setStoryOpen] = useState(false);
+  const [angle, setAngle] = useAngle();
 
   const apartmentShared = sharedNote(scenariosUsing(profile, (s) => s.apartmentId === apartment.id));
   const downValue = scenario.downPayment.kind === 'manual' ? 'manual' : scenario.downPayment.planId;
@@ -198,6 +203,9 @@ export function App() {
 
       <WelcomeBanner onStartOwn={() => setState((s) => addProfile(s, 'Я'))} />
 
+      <AngleTabs value={angle} onChange={setAngle} />
+      {ANGLES_WITH_SCENARIO.has(angle) && (
+      <>
       <div id="scenario-tabs">
       <ScenarioBar
         scenarios={profile.scenarios}
@@ -213,7 +221,18 @@ export function App() {
       </div>
       <ScenarioDock scenarios={profile.scenarios} activeId={scenario.id} watchId="scenario-tabs"
         onSelect={(id) => setProfile((p) => ({ ...p, activeScenarioId: id }))} />
+      </>
+      )}
 
+      {angle !== 'deal' && ANGLES_WITH_SCENARIO.has(angle) && (
+        <p className="angle-scenario">
+          Сценарий <strong>{toRoman(scenarioIndex + 1)} «{scenario.name}»</strong>: кредит <Money value={loan} currency={currency} />,{' '}
+          {formatTerm(deal.termMonths)}. Изменить — на вкладке «Подбор сделки».
+          {'error' in result && <span className="error"> {result.error}</span>}
+        </p>
+      )}
+
+      {angle === 'deal' && (
       <section className="card">
         <div className="scenario-row">
           <span className="roman big" aria-label={`Сценарий ${scenarioIndex + 1}`}>{toRoman(scenarioIndex + 1)}</span>
@@ -357,8 +376,9 @@ export function App() {
           в этом браузере автоматически; «Скачать JSON» — копия на диск.
         </p>
       </section>
+      )}
 
-      {'error' in result ? null : (
+      {angle === 'deal' && !('error' in result) && (
         <>
           <section className="card summary">
             <div className={badFields.has('loan') ? 'over' : ''}>
@@ -425,8 +445,12 @@ export function App() {
             <OverpaymentChart schedule={result.schedule} baseline={inputs.prepayments.length > 0 ? result.baseline : undefined}
               issueDate={issueDate} />
           </section>
+        </>
+      )}
 
-          {loan > 0 && (
+      {angle === 'extra' && !('error' in result) && (
+        <>
+          {loan > 0 ? (
             <>
               <ExtraSumSection plan={profile.help} onChange={(help) => setProfile((p) => ({ ...p, help }))}
                 evaluation={helpEval} issueDate={issueDate} targetPayment={scenario.targetPayment} />
@@ -434,11 +458,27 @@ export function App() {
               <HelpTimingSection loan={helpLoan!} noHelp={result.schedule} currency={currency} issueDate={issueDate}
                 defaultAmount={helpOk ? helpOk.totalHelp : undefined} equivalents={helpOk?.equivalents} />
             </>
-          )}
+          ) : <section className="card"><p className="hint">В сценарии нет кредита — добавлять сумму некуда.</p></section>}
         </>
       )}
 
-      {profile.scenarios.length > 1 && (
+      {angle === 'banks' && (
+        <section className="card">
+          <div className="help-head">
+            <h2>Сравнить банки</h2>
+            <button type="button" className="primary"
+              onClick={() => setProfile((p) => scenariosForProducts(p, scenario.id, state.products.map((x) => x.id),
+                new Map(state.products.map((x) => [x.id, x.name]))))}>
+              Сравнить все банки
+            </button>
+          </div>
+          <p className="hint">
+            Кнопка создаёт копию текущего сценария (квартира, взнос, срок) для каждой карточки банка, которой ещё нет, и
+            добавляет их в сравнение. Карточки и их условия — ниже.
+          </p>
+        </section>
+      )}
+      {angle === 'banks' && profile.scenarios.length > 1 && (
         <ComparisonSection state={state} profile={profile} evaluations={evaluations} currency={currency}
           onToggle={(id) => setProfile((p) => toggleCompared(p, id))}
           onSelect={(id) => {
@@ -447,7 +487,7 @@ export function App() {
           }} />
       )}
 
-      {'error' in result ? null : (
+      {angle === 'deal' && !('error' in result) && (
         <>
           <section className="card">
             <h2>Куда уходят платежи по годам</h2>
@@ -460,8 +500,22 @@ export function App() {
         </>
       )}
 
-      <LoanSection loans={profile.loans} onChange={(loans) => setProfile((p) => ({ ...p, loans }))} />
+      {angle === 'loan' && <LoanSection loans={profile.loans} onChange={(loans) => setProfile((p) => ({ ...p, loans }))} />}
 
+      {angle === 'save' && !('error' in result) && (
+        <SaveInsteadSection plan={profile.saving} onChange={(saving) => setProfile((p) => ({ ...p, saving }))}
+          price={deal.price} downPayment={deal.downPayment} schedule={result.schedule} currency={currency}
+          fxRates={state.fxRates} issueDate={issueDate} />
+      )}
+
+      {angle === 'rent' && (
+        <RentHistorySection plan={profile.rent} onChange={(rent) => setProfile((p) => ({ ...p, rent }))} fxRates={state.fxRates}
+          scenarioRatePct={helpLoan ? helpLoan.rateSteps[0]!.annualRatePct : scenario.annualRatePct}
+          price={deal.price} priceCurrency={currency} />
+      )}
+
+      {angle === 'deal' && (
+      <>
       <div id="components">
         <ComponentsSection
           profile={profile}
@@ -486,7 +540,10 @@ export function App() {
         onAccountsChange={(accounts) => setProfile((p) => ({ ...p, accounts }))}
         onRatesChange={(fxRates) => setState((s) => ({ ...s, fxRates }))}
       />
+      </>
+      )}
 
+      {angle === 'banks' && (
       <ProductsSection
         products={state.products}
         refinancingRatePct={state.refinancingRatePct}
@@ -505,6 +562,7 @@ export function App() {
         })}
         onRefinancingChange={(refinancingRatePct) => setState((s) => ({ ...s, refinancingRatePct }))}
       />
+      )}
     </main>
     {storyOpen && !('error' in result) && (
       <StoryMode

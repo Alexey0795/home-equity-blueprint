@@ -136,9 +136,10 @@ export function StoryMode(props: Props) {
         body: (
           <>
             <ul className="story-list">
-              {help.tranches.map((t, i) => (
+              {help.tranches.slice(0, 5).map((t, i) => (
                 <li key={i}><Money value={t.amount} currency={currency} /> — {trancheWhen(t.month, issueDate)}</li>
               ))}
+              {help.tranches.length > 5 && <li>и ещё {help.tranches.length - 5} взносов, всего <Money value={help.totalHelp} currency={currency} /></li>}
             </ul>
             <p className="story-sub">Процентов банку меньше на</p>
             <p className="story-big ok"><Money value={saved} currency={currency} /></p>

@@ -43,6 +43,22 @@ export interface HelpEvaluation {
   equivalents: { name: string; price: number }[];
   /** Самая большая нагрузка в месяц: платёж банку + возврат займа. */
   maxOutflow: number;
+  /** Что даёт каждый транш по порядку: насколько меньше процентов и короче кредит по сравнению с траншами до него. */
+  perTranche: { month: number; amount: number; interestSaved: number; monthsSaved: number }[];
+}
+
+/** Разовые и повторяющиеся транши плана — одним списком по месяцам. */
+export function planTranches(plan: HelpPlan): Tranche[] {
+  const list: Tranche[] = plan.tranches.map((t) => ({ month: t.month, amount: t.amount }));
+  plan.recurring.forEach((r, i) => {
+    const where = `Повторяющийся транш №${i + 1}`;
+    if (!Number.isInteger(r.everyMonths) || r.everyMonths < 1) throw new RangeError(`${where}: «каждые» — целое число месяцев >= 1`);
+    if (!Number.isInteger(r.fromMonth) || r.fromMonth < 0 || !Number.isInteger(r.toMonth) || r.toMonth < r.fromMonth) {
+      throw new RangeError(`${where}: месяцы «с» и «по» — целые, «по» не раньше «с»`);
+    }
+    for (let m = r.fromMonth; m <= r.toMonth; m += r.everyMonths) list.push({ month: m, amount: r.amount });
+  });
+  return list.filter((t) => Number.isFinite(t.amount) && t.amount > 0).sort((a, b) => a.month - b.month);
 }
 
 /** Дополнительная сумма в сценарии. null — траншей нет; { error } — что-то не посчитать (нет курса, платёж по займу мал). */
@@ -52,9 +68,9 @@ export function evaluateHelp(
   currency: Currency,
   fxRates: FxRates,
 ): HelpEvaluation | { error: string } | null {
-  const active = plan.tranches.filter((t) => Number.isFinite(t.amount) && t.amount > 0);
-  if (active.length === 0) return null;
   try {
+    const active = planTranches(plan);
+    if (active.length === 0) return null;
     const conv = (n: number) => convert(n, plan.currency, currency, fxRates);
     const tranches = active.map((t) => ({ month: t.month, amount: conv(t.amount) }));
     const loan = loanParamsForDeal(result.deal);
@@ -72,7 +88,20 @@ export function evaluateHelp(
     const rent = rentWithoutSum(atStart, conv(plan.savingPerMonth), conv(plan.rentPerMonth));
     const mortgage = reinvestedSavings(result.schedule, withHelp, tranches, plan.depositRatePct, compareMonth,
       rent ? { months: rent.months, perMonth: conv(plan.rentPerMonth) } : null);
+    let previous = result.schedule;
+    const perTranche = tranches.map((t, i) => {
+      const next = bankScheduleWithHelp(loan, tranches.slice(0, i + 1), plan.mode);
+      const item = {
+        month: t.month,
+        amount: t.amount,
+        interestSaved: previous.totalInterest - next.totalInterest,
+        monthsSaved: previous.rows.length - next.rows.length,
+      };
+      previous = next;
+      return item;
+    });
     return {
+      perTranche,
       currency,
       loan,
       tranches,

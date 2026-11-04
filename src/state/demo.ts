@@ -3,6 +3,8 @@ import {
   DEFAULT_REFINANCING_RATE_PCT,
   STATE_VERSION,
   newHelpPlan,
+  newRentPlan,
+  newSavePlan,
   newId,
   newSavingsPlan,
   type AppState,
@@ -77,6 +79,16 @@ export function demoState(): AppState {
       monthlyPayment: 600,
       rentPerMonth: 1_300,
       savingPerMonth: 1_500,
+    },
+    saving: { ...newSavePlan(), rentPerMonth: 1_300 },
+    // Пример аренды в прошлом: комната, потом квартиры подороже.
+    rent: {
+      ...newRentPlan(),
+      periods: [
+        { id: newId(), from: '2016-09', to: '2019-08', amount: 100, currency: 'USD' },
+        { id: newId(), from: '2019-09', to: '2022-12', amount: 250, currency: 'USD' },
+        { id: newId(), from: '2023-01', to: null, amount: 450, currency: 'USD' },
+      ],
     },
   };
   return {
