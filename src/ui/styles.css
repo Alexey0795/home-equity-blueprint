@@ -394,3 +394,84 @@ td [data-tip]:hover::after { left: auto; right: 0; }
 .help-timing:fullscreen .month-grid { max-width: 760px; }
 .help-timing:fullscreen .cell { height: 22px; }
 .ticker-line .money { white-space: nowrap; }
+
+/* --- Помощь родных: заём --- */
+.tranches { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.tranche { display: grid; grid-template-columns: minmax(150px, 220px) minmax(150px, 220px) 1fr auto; gap: 10px; align-items: end; width: 100%; }
+.tranche > small { padding-bottom: 9px; }
+@media (max-width: 620px) {
+  .tranche { grid-template-columns: 1fr 1fr auto; }
+  .tranche > small { grid-column: 1 / -1; grid-row: 2; padding: 0; }
+  .tranche > span:empty { display: none; }
+}
+.family-help .fields { margin-top: 12px; }
+.family-honest {
+  margin: 14px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--accent-soft);
+  color: var(--text-2); font-size: 0.9rem; line-height: 1.5;
+}
+.family-honest .money { white-space: nowrap; }
+
+/* --- Гонка долгов --- */
+.race-clock { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; margin: 4px 0 10px; }
+.race-lanes { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.race-label { display: flex; justify-content: space-between; gap: 8px; font-size: 0.9rem; color: var(--text-2); margin-bottom: 4px; }
+.race-label span:last-child { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.race-track { height: 22px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.race-bar { height: 100%; border-radius: 999px; background: var(--accent); min-width: 0; }
+.lane-nohelp .race-bar { background: var(--muted); }
+.lane-help .race-bar { background: var(--accent); }
+.lane-family .race-bar { background: var(--ok); }
+.race-lane.done .race-label span:last-child { color: var(--ok); }
+.race input[type='range'] { padding: 0; border: none; box-shadow: none; }
+
+/* --- Рассказ по шагам --- */
+.story {
+  position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; background: var(--bg); color: var(--text);
+}
+.story-slides { flex: 1; overflow: auto; padding: 32px 16px; }
+.story-slide { display: none; max-width: 860px; margin: 0 auto; }
+.story-slide.current { display: block; }
+@media (prefers-reduced-motion: no-preference) {
+  .story-slide.current { animation: rise 0.35s var(--ease) both; }
+}
+.story-step { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.story-slide h2 { font-size: clamp(1.6rem, 4vw, 2.6rem); margin: 4px 0 18px; }
+.story-big { font-size: clamp(2rem, 7vw, 4rem); font-weight: 800; margin: 6px 0; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.story-big.interest, .story-totals .interest { color: var(--interest); }
+.story-big.ok, .story-totals .ok { color: var(--ok); }
+.story-sub { font-size: clamp(1rem, 2.4vw, 1.3rem); color: var(--text-2); margin: 10px 0; line-height: 1.4; }
+.story-list { font-size: clamp(1rem, 2.4vw, 1.3rem); line-height: 1.7; padding-left: 1.2em; }
+.story-note { color: var(--text-2); font-size: 0.95rem; line-height: 1.5; }
+.story .month-grid { max-width: 640px; margin-top: 12px; }
+.story-totals { display: grid; gap: 18px; }
+.story-totals div { display: flex; flex-direction: column; }
+.story-totals div > span { font-size: 1.1rem; color: var(--text-2); }
+.story-totals strong { font-size: clamp(1.8rem, 6vw, 3.2rem); font-variant-numeric: tabular-nums; }
+.story-big .money, .story-totals .money { text-decoration: none; }
+.story-thanks { font-size: clamp(2rem, 6vw, 3.4rem); font-weight: 800; color: var(--accent); margin: 12px 0 0; }
+.story-nav {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
+  padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface);
+}
+.story-dots { display: flex; gap: 6px; }
+.story-dots button { width: 11px; height: 11px; padding: 0; border-radius: 50%; background: var(--border-strong); border: none; }
+.story-dots button.on { background: var(--accent); }
+.story-tools { display: flex; gap: 6px; margin-left: auto; }
+@media (max-width: 620px) { .story-tools { margin-left: 0; } }
+.mini-mountain { width: 100%; height: auto; max-height: 50vh; }
+.mm-area { fill: var(--interest); opacity: 0.25; }
+.mm-line { fill: none; stroke: var(--interest); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.mm-help { fill: none; stroke: var(--ok); stroke-width: 3; stroke-dasharray: 8 5; vector-effect: non-scaling-stroke; }
+.mm-tick { font-size: 12px; fill: var(--muted); text-anchor: middle; }
+
+/* Печать рассказа: все слайды, по одному на страницу. */
+@media print {
+  body:has(.story) main { display: none !important; }
+  .story { position: static; display: block; background: #fff; color: #000; }
+  .story-slides { overflow: visible; padding: 0; }
+  .story-slide { display: block !important; break-after: page; padding-top: 24px; animation: none !important; }
+  .story-slide:last-child { break-after: auto; }
+  .story .cell { animation: none !important; transition: none !important; }
+  .story-nav { display: none; }
+  .story * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}

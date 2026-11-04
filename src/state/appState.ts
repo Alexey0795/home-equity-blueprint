@@ -9,11 +9,12 @@
  * Версии 1–6 читаются в legacy.ts и переносятся в профиль «Я» (migrateLegacy).
  * 7 — профили и компоненты; 8 — дата выдачи кредита у сценария (календарь платежей), в v7 её нет → null;
  * 9 — реальные кредиты с журналом событий у профиля (`loans`), в v7–8 их нет → [];
- * 10 — тип графика (аннуитет / дифференцированный) у карточки банка, сценария и реального кредита.
+ * 10 — тип графика (аннуитет / дифференцированный) у карточки банка, сценария и реального кредита;
+ * 11 — помощь родных у профиля (`help`: заём траншами, возврат, инфляция, эквиваленты), в v7–10 её нет → newHelpPlan().
  * При несовместимом изменении формата — поднять STATE_VERSION и дописать миграцию.
  */
 
-import { convert, parseIsoDate, type Account, type Repayment, type CreditProduct, type Currency, type FreeVariable, type FxRates, type PrepaymentPlan, type RecurringPrepayment } from '../domain';
+import { convert, parseIsoDate, type Account, type PrepaymentMode, type Repayment, type CreditProduct, type Currency, type FreeVariable, type FxRates, type PrepaymentPlan, type RecurringPrepayment } from '../domain';
 import { LEGACY_VERSION, parseLegacy, type LegacyState } from './legacy';
 import {
   asArray,
@@ -31,7 +32,7 @@ import { parseLoan, type RealLoan } from './loans';
 import { parseAccount, parseProduct } from './parseShared';
 import { sampleProducts } from './sampleProducts';
 
-export const STATE_VERSION = 10;
+export const STATE_VERSION = 11;
 
 /** Квартира — компонент: цена в своей валюте (она же валюта сделки). */
 export interface Apartment {
@@ -102,6 +103,55 @@ export interface Profile {
   comparedScenarioIds: string[];
   /** Реальные (взятые) кредиты с хроникой событий. */
   loans: RealLoan[];
+  /** Помощь родных на первый взнос и досрочку (заём) — для «Цены промедления» и рассказа. */
+  help: HelpPlan;
+}
+
+/** Транш помощи: month 0 — в первый взнос (до сделки), k ≥ 1 — после k-го платежа банку. */
+export interface HelpTranche {
+  id: string;
+  month: number;
+  amount: number;
+}
+
+/** «Цена дня промедления = 0,4 обеда»: понятная вещь и её цена в валюте плана помощи. */
+export interface Equivalent {
+  id: string;
+  name: string;
+  price: number;
+}
+
+/** Помощь родных: заём траншами, условия возврата; суммы — в валюте плана. */
+export interface HelpPlan {
+  currency: Currency;
+  tranches: HelpTranche[];
+  /** % годовых по займу; 0 — беспроцентный. */
+  ratePct: number;
+  /** Месяцев бесплатной отсрочки от выдачи ипотеки. */
+  graceMonths: number;
+  /** Сколько возвращать родным в месяц после отсрочки. */
+  monthlyPayment: number;
+  /** Как банк учитывает транши после выдачи. */
+  mode: PrepaymentMode;
+  /** Инфляция, % в год — чтобы честно показать, сколько помощь стоит помогающим. */
+  inflationPct: number;
+  equivalents: Equivalent[];
+}
+
+export function newHelpPlan(currency: Currency = 'BYN'): HelpPlan {
+  return {
+    currency,
+    tranches: [],
+    ratePct: 0,
+    graceMonths: 12,
+    monthlyPayment: 500,
+    mode: 'reduceTerm',
+    inflationPct: 15,
+    equivalents: [
+      { id: newId(), name: 'обед в кафе', price: 20 },
+      { id: newId(), name: 'чашка кофе', price: 6 },
+    ],
+  };
 }
 
 export interface AppState {
@@ -203,6 +253,7 @@ export function newProfile(name: string): Profile {
     activeScenarioId: '',
     comparedScenarioIds: [],
     loans: [],
+    help: newHelpPlan(),
   };
   const scenario = newScenario(base, 'Основной');
   return { ...base, scenarios: [scenario], activeScenarioId: scenario.id };
@@ -376,6 +427,7 @@ export function migrateLegacy(legacy: LegacyState): AppState {
     activeScenarioId: legacy.activeScenarioId,
     comparedScenarioIds: legacy.comparedScenarioIds,
     loans: [],
+    help: newHelpPlan(),
   };
   return {
     version: STATE_VERSION,
@@ -509,6 +561,35 @@ function parseProfile(raw: unknown, index: number, productIds: Set<string>): Pro
     comparedScenarioIds,
     // До версии 9 реальных кредитов не было.
     loans: Array.isArray(r.loans) ? uniqueLoans(r.loans.map((x, i) => parseLoan(x, i, where))) : [],
+    // До версии 11 помощи родных не было.
+    help: r.help === undefined ? newHelpPlan() : parseHelpPlan(r.help, where),
+  };
+}
+
+function parseHelpPlan(raw: unknown, where: string): HelpPlan {
+  const w = `${where}, помощь родных`;
+  const r = asObject(raw, w);
+  const tranches = asArray(r, 'tranches', w).map((item, i): HelpTranche => {
+    const iw = `${w}, транш №${i + 1}`;
+    const x = asObject(item, iw);
+    return { id: readId(x, iw), month: readNumber(x, 'month', iw), amount: readNumber(x, 'amount', iw) };
+  });
+  const equivalents = asArray(r, 'equivalents', w).map((item, i): Equivalent => {
+    const iw = `${w}, эквивалент №${i + 1}`;
+    const x = asObject(item, iw);
+    return { id: readId(x, iw), name: readString(x, 'name'), price: readNumber(x, 'price', iw) };
+  });
+  uniqueIds(tranches, 'траншей помощи');
+  uniqueIds(equivalents, 'эквивалентов');
+  return {
+    currency: readCurrency(r, w),
+    tranches,
+    ratePct: readNumber(r, 'ratePct', w),
+    graceMonths: readNumber(r, 'graceMonths', w),
+    monthlyPayment: readNumber(r, 'monthlyPayment', w),
+    mode: readMode(r, w),
+    inflationPct: readNumber(r, 'inflationPct', w),
+    equivalents,
   };
 }
 

@@ -27,6 +27,16 @@ interface Props {
   noHelp: PaymentSchedule;
   currency: Currency;
   issueDate: CalendarDate | undefined;
+  /** Сумма по умолчанию (если в этом браузере ещё не вводили): все транши помощи родных. */
+  defaultAmount?: number;
+  /** «Обед в кафе — 20»: в валюте сделки. */
+  equivalents?: { name: string; price: number }[];
+}
+
+/** «≈ 0,45 обеда в кафе · 1,5 чашки кофе». */
+export function equivalentsText(amount: number, equivalents: { name: string; price: number }[]): string {
+  const n = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: amount >= 10 ? 0 : 1 });
+  return equivalents.map((e) => `${n.format(amount / e.price)} × ${e.name}`).join(' · ');
 }
 
 const AMOUNT_KEY = 'home-equity-blueprint/help-amount';
@@ -54,7 +64,7 @@ function saveAmount(amount: number): void {
 const fine = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 5, maximumFractionDigits: 5 });
 
 /** Живой счётчик: сколько процентов набежало, пока открыт экран (perDay — цена одного дня). */
-function Ticker({ perDay, currency }: { perDay: number; currency: Currency }) {
+export function Ticker({ perDay, currency }: { perDay: number; currency: Currency }) {
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
     const start = performance.now();
@@ -73,7 +83,7 @@ function Ticker({ perDay, currency }: { perDay: number; currency: Currency }) {
  * «Тетрис» месяцев: каждая клетка — платёж, ряд — год. Оранжевая часть — проценты в этом месяце (бледная — сколько
  * было бы без помощи). Зелёные клетки — платежи, которых не будет.
  */
-function MonthGrid({ noHelp, withHelp, helpMonth }: { noHelp: PaymentSchedule; withHelp: PaymentSchedule; helpMonth: number }) {
+export function MonthGrid({ noHelp, withHelp, helpMonth }: { noHelp: PaymentSchedule; withHelp: PaymentSchedule; helpMonth: number }) {
   const maxInterest = noHelp.rows.reduce((m, r) => Math.max(m, r.interest), 0) || 1;
   const years = Math.ceil(noHelp.rows.length / 12);
   return (
@@ -108,10 +118,10 @@ function MonthGrid({ noHelp, withHelp, helpMonth }: { noHelp: PaymentSchedule; w
  * «Цена промедления»: дополнительная сумма (помощь на первый взнос) против дня, когда она дойдёт до долга.
  * Расчёт — domain/helpTiming.ts; между датами платежей переплата растёт пропорционально дням.
  */
-export function HelpTimingSection({ loan, noHelp, currency, issueDate }: Props) {
+export function HelpTimingSection({ loan, noHelp, currency, issueDate, defaultAmount, equivalents = [] }: Props) {
   const colors = useChartColors();
   const sectionRef = useRef<HTMLElement>(null);
-  const [amount, setAmount] = useState(() => loadAmount(Math.max(1000, Math.round((loan.principal * 0.15) / 1000) * 1000)));
+  const [amount, setAmount] = useState(() => loadAmount(defaultAmount ?? Math.max(1000, Math.round((loan.principal * 0.15) / 1000) * 1000)));
   const [mode, setMode] = useState<PrepaymentMode>('reduceTerm');
   const [delay, setDelay] = useState(30);
 
@@ -226,6 +236,7 @@ export function HelpTimingSection({ loan, noHelp, currency, issueDate }: Props) 
           <span>Один день промедления</span>
           <strong className="interest"><BigMoney value={perDayLater} currency={currency} /></strong>
           <span className="chip neutral">месяц ≈ <Money value={perDayLater * DAYS_PER_MONTH} currency={currency} /></span>
+          {equivalents.length > 0 && <span className="chip neutral">≈ {equivalentsText(perDayLater, equivalents)}</span>}
         </div>
       </div>
 

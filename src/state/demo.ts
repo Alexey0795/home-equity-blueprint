@@ -2,6 +2,7 @@ import {
   DEFAULT_FX_RATES,
   DEFAULT_REFINANCING_RATE_PCT,
   STATE_VERSION,
+  newHelpPlan,
   newId,
   newSavingsPlan,
   type AppState,
@@ -69,6 +70,12 @@ export function demoState(): AppState {
     activeScenarioId: scenarios[0]!.id,
     comparedScenarioIds: scenarios.map((s) => s.id),
     loans: [],
+    // Пример помощи родных: часть до сделки, часть через год; беспроцентный заём с отсрочкой на год.
+    help: {
+      ...newHelpPlan(),
+      tranches: [{ id: newId(), month: 0, amount: 20_000 }, { id: newId(), month: 12, amount: 10_000 }],
+      monthlyPayment: 600,
+    },
   };
   return {
     version: STATE_VERSION,

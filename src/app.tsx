@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   checkDealAgainstProduct,
   convert,
@@ -28,6 +28,7 @@ import {
   type Scenario,
 } from './state/appState';
 import { evaluateProfile } from './state/evaluate';
+import { evaluateHelp } from './state/help';
 import { useAppState } from './state/useAppState';
 import { OverpaymentChart } from './ui/charts/OverpaymentChart';
 import { YearlyPaymentsChart } from './ui/charts/YearlyPaymentsChart';
@@ -40,7 +41,10 @@ import { formatDate, formatMonthYear, formatTerm, toRoman } from './ui/format';
 import { BigMoney, FxContext, Money } from './ui/Money';
 import { FREE_VARIABLE_HINTS, FreeVariablePicker } from './ui/FreeVariablePicker';
 import { NumberField } from './ui/NumberField';
+import { DebtRace } from './ui/DebtRace';
+import { FamilyHelpSection } from './ui/FamilyHelpSection';
 import { HelpTimingSection } from './ui/HelpTimingSection';
+import { StoryMode } from './ui/StoryMode';
 import { LoanSection } from './ui/LoanSection';
 import { ProductsSection } from './ui/ProductsSection';
 import { ProfileSwitcher } from './ui/ProfileSwitcher';
@@ -160,6 +164,14 @@ export function App() {
   /** Кредит сценария как есть — вход для «Цены промедления»; объект один на расчёт, чтобы не пересчитывать кривую зря. */
   const helpLoan = useMemo(() => ('error' in result ? null : loanParamsForDeal(result.deal)), [result]);
 
+  /** Помощь родных в текущем сценарии (транши, возврат) — для блока займа, гонки и рассказа. */
+  const helpEval = useMemo(
+    () => ('error' in result ? null : evaluateHelp(profile.help, result, currency, state.fxRates)),
+    [profile.help, result, currency, state.fxRates],
+  );
+  const helpOk = helpEval && !('error' in helpEval) ? helpEval : null;
+  const [storyOpen, setStoryOpen] = useState(false);
+
   const apartmentShared = sharedNote(scenariosUsing(profile, (s) => s.apartmentId === apartment.id));
   const downValue = scenario.downPayment.kind === 'manual' ? 'manual' : scenario.downPayment.planId;
   const usedProductIds = new Set(state.profiles.flatMap((p) => p.scenarios.flatMap((s) => (s.productId ? [s.productId] : []))));
@@ -179,6 +191,7 @@ export function App() {
             onRename={(name) => setProfile((p) => ({ ...p, name }))}
             onDelete={() => setState((s) => deleteProfile(s, s.activeProfileId))}
           />
+          {!('error' in result) && <button type="button" onClick={() => setStoryOpen(true)}>▶ Рассказ</button>}
           <DataFileButtons state={state} onImport={setState} />
         </div>
       </header>
@@ -414,7 +427,14 @@ export function App() {
           </section>
 
           {loan > 0 && (
-            <HelpTimingSection loan={helpLoan!} noHelp={result.schedule} currency={currency} issueDate={issueDate} />
+            <>
+              <FamilyHelpSection plan={profile.help} onChange={(help) => setProfile((p) => ({ ...p, help }))}
+                evaluation={helpEval} issueDate={issueDate} targetPayment={scenario.targetPayment}
+                onStory={() => setStoryOpen(true)} />
+              {helpOk && <DebtRace evaluation={helpOk} currency={currency} issueDate={issueDate} />}
+              <HelpTimingSection loan={helpLoan!} noHelp={result.schedule} currency={currency} issueDate={issueDate}
+                defaultAmount={helpOk ? helpOk.totalHelp : undefined} equivalents={helpOk?.equivalents} />
+            </>
           )}
         </>
       )}
@@ -487,6 +507,22 @@ export function App() {
         onRefinancingChange={(refinancingRatePct) => setState((s) => ({ ...s, refinancingRatePct }))}
       />
     </main>
+    {storyOpen && !('error' in result) && (
+      <StoryMode
+        scenarioName={scenario.name}
+        apartmentName={apartment.name}
+        price={deal.price}
+        downPayment={deal.downPayment}
+        loan={loan}
+        currency={currency}
+        issueDate={issueDate}
+        bankText={product ? product.name : `Своя ставка ${formatPct(solvedManualRate)} годовых`}
+        noHelp={result.schedule}
+        help={helpOk}
+        plan={profile.help}
+        onClose={() => setStoryOpen(false)}
+      />
+    )}
     </FxContext.Provider>
   );
 }

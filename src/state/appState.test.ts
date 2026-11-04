@@ -81,7 +81,7 @@ describe('миграция старых версий в профиль «Я»', 
       activeScenarioId: 's1',
       scenarios: [{ id: 's1', name: 'Старый', price: 300_000, downPayment: 60_000, annualRatePct: 12, termMonths: 240 }],
     }));
-    expect(state.version).toBe(10);
+    expect(state.version).toBe(11);
     const profile = activeProfile(state);
     expect(profile.name).toBe('Я');
     expect(profile.apartments).toEqual([expect.objectContaining({ currency: 'BYN', price: 300_000 })]);
@@ -255,5 +255,27 @@ describe('версия 10: тип графика', () => {
 
     activeScenario(activeProfile(state)).repayment = 'differentiated';
     expect(activeScenario(activeProfile(roundTrip(state))).repayment).toBe('differentiated');
+  });
+});
+
+describe('версия 11: помощь родных', () => {
+  it('данные v10 открываются с пустым планом помощи; транши и условия переживают сохранение; битый транш — понятная ошибка', () => {
+    const raw = JSON.parse(serializeState(defaultState()));
+    raw.version = 10;
+    delete raw.profiles[0].help;
+    const loaded = activeProfile(parseState(JSON.stringify(raw)));
+    expect(loaded.help.tranches).toEqual([]);
+    expect(loaded.help.mode).toBe('reduceTerm');
+
+    const state = defaultState();
+    const help = activeProfile(state).help;
+    help.tranches = [{ id: 't1', month: 0, amount: 20_000 }, { id: 't2', month: 12, amount: 5_000 }];
+    help.ratePct = 2.5;
+    help.currency = 'USD';
+    expect(activeProfile(roundTrip(state)).help).toEqual(help);
+
+    const bad = JSON.parse(serializeState(state));
+    bad.profiles[0].help.tranches[1].amount = 'много';
+    expect(() => parseState(JSON.stringify(bad))).toThrow('транш №2');
   });
 });
