@@ -9,7 +9,7 @@ import {
 } from '../domain';
 import type { HelpPlan } from '../state/appState';
 import type { HelpEvaluation } from '../state/help';
-import { trancheWhen } from './FamilyHelpSection';
+import { trancheWhen } from './ExtraSumSection';
 import { formatMonthYear, formatTerm } from './format';
 import { equivalentsText, MonthGrid, Ticker } from './HelpTimingSection';
 import { Money } from './Money';
@@ -18,7 +18,7 @@ interface Props {
   scenarioName: string;
   apartmentName: string;
   price: number;
-  /** Свой первый взнос (без помощи). */
+  /** Первый взнос сценария (без дополнительной суммы). */
   downPayment: number;
   loan: number;
   currency: Currency;
@@ -32,6 +32,7 @@ interface Props {
 }
 
 const times = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const ratioFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
 
 /** Простая «гора переплаты» на SVG (без Recharts — чтобы печаталась). */
 function MiniMountain({ noHelp, withHelp }: { noHelp: PaymentSchedule; withHelp?: PaymentSchedule }) {
@@ -64,8 +65,8 @@ function MiniMountain({ noHelp, withHelp }: { noHelp: PaymentSchedule; withHelp?
 }
 
 /**
- * «Рассказ по шагам»: экран за экраном — квартира, цена кредита, гора переплаты, что даёт помощь, цена дня,
- * как вернётся заём, итог. Стрелки ← → / пробел, Esc — выход. «Распечатать» — все слайды по одному на страницу.
+ * «Обзор по шагам»: экран за экраном — квартира, цена кредита, гора переплаты, дополнительная сумма, цена промедления,
+ * досрочка или вклад, возврат займа (если задан), итог. Стрелки ← → / пробел, Esc — выход. «Распечатать» — все слайды по одному на страницу.
  */
 export function StoryMode(props: Props) {
   const { apartmentName, price, downPayment, loan, currency, issueDate, bankText, noHelp, help, plan, onClose } = props;
@@ -93,8 +94,8 @@ export function StoryMode(props: Props) {
           <p className="story-big"><Money value={price} currency={currency} /></p>
           <p className="story-sub">{apartmentName}</p>
           <ul className="story-list">
-            <li>Свои сбережения на первый взнос — <Money value={downPayment} currency={currency} /></li>
-            <li>Не хватает, берём в кредит — <strong><Money value={loan} currency={currency} /></strong></li>
+            <li>Первый взнос — <Money value={downPayment} currency={currency} /></li>
+            <li>Кредит — <strong><Money value={loan} currency={currency} /></strong></li>
             <li>Срок — {formatTerm(noHelp.rows.length)}</li>
             {bankText && <li>{bankText}</li>}
           </ul>
@@ -105,10 +106,10 @@ export function StoryMode(props: Props) {
       title: 'Сколько стоит кредит',
       body: (
         <>
-          <p className="story-sub">Банку сверх взятого придётся отдать процентами</p>
+          <p className="story-sub">Переплата процентами за весь срок</p>
           <p className="story-big interest"><Money value={noHelp.totalInterest} currency={currency} /></p>
           <ul className="story-list">
-            <li>Каждый взятый рубль обойдётся в <strong>{times.format(1 + noHelp.totalInterest / (loan || 1))}</strong> рубля</li>
+            <li>Каждый рубль кредита обходится в <strong>{times.format(1 + noHelp.totalInterest / (loan || 1))}</strong> рубля</li>
             <li>Всего банку — <Money value={noHelp.totalPaid} currency={currency} /></li>
           </ul>
         </>
@@ -121,7 +122,7 @@ export function StoryMode(props: Props) {
           <MiniMountain noHelp={noHelp} withHelp={help?.withHelp} />
           <p className="story-sub">
             Проценты, выплаченные к каждому году (по горизонтали — годы).
-            {help && ' Зелёная линия — с вашей помощью: гора ниже и кончается раньше.'}
+            {help && ' Зелёная линия — с дополнительной суммой: гора ниже и кончается раньше.'}
           </p>
         </>
       ),
@@ -131,7 +132,7 @@ export function StoryMode(props: Props) {
   if (help) {
     slides.push(
       {
-        title: 'Если вы поможете',
+        title: 'Дополнительная сумма',
         body: (
           <>
             <ul className="story-list">
@@ -139,71 +140,103 @@ export function StoryMode(props: Props) {
                 <li key={i}><Money value={t.amount} currency={currency} /> — {trancheWhen(t.month, issueDate)}</li>
               ))}
             </ul>
-            <p className="story-sub">Банку я отдам меньше на</p>
+            <p className="story-sub">Процентов банку меньше на</p>
             <p className="story-big ok"><Money value={saved} currency={currency} /></p>
-            {shorter > 0 && <p className="story-sub">и закрою кредит на <strong>{formatTerm(shorter)}</strong> раньше</p>}
+            {shorter > 0 && <p className="story-sub">Кредит короче на <strong>{formatTerm(shorter)}</strong></p>}
+            {help.rent && (
+              <p className="story-sub">
+                Покупка раньше на <strong>{formatTerm(help.rent.months)}</strong> — аренды меньше на{' '}
+                <strong><Money value={help.rent.rent} currency={currency} /></strong>
+              </p>
+            )}
             <MonthGrid noHelp={help.noHelp} withHelp={help.withHelp} helpMonth={-1} />
-            <p className="story-note">Клетка — платёж, ряд — год. Зелёные клетки — платежей, которых не будет.</p>
+            <p className="story-note">Клетка — платёж, ряд — год. Зелёные клетки — платежи, которых не будет.</p>
           </>
         ),
       },
       {
-        title: 'Каждый день на счету',
+        title: 'Цена промедления',
         body: (
           <>
-            <p className="story-sub">Пока помощь не дошла до долга, банк начисляет на неё проценты. Один день стоит</p>
+            <p className="story-sub">Пока сумма не внесена в долг, на неё начисляются проценты. Один день стоит</p>
             <p className="story-big interest"><Money value={perDay} currency={currency} /></p>
             <ul className="story-list">
-              <li>Месяц промедления — <Money value={(perDay * 365) / 12} currency={currency} /></li>
+              <li>Месяц — <Money value={(perDay * 365) / 12} currency={currency} /></li>
               {help.equivalents.length > 0 && <li>День — это {equivalentsText(perDay, help.equivalents)}</li>}
-              <li>Пока вы смотрите этот экран — <Ticker perDay={perDay} currency={currency} /></li>
+              <li>За время этого экрана — <Ticker perDay={perDay} currency={currency} /></li>
             </ul>
           </>
         ),
       },
       {
-        title: 'Как я верну',
+        title: 'Досрочка или вклад',
         body: (
           <>
-            <ul className="story-list">
-              <li>{plan.ratePct > 0 ? `Под ${plan.ratePct.toLocaleString('ru-RU')}% годовых` : 'Без процентов'}</li>
-              {plan.graceMonths > 0 && <li>Отсрочка — {formatTerm(plan.graceMonths)}, без платежей и процентов</li>}
-              {help.family.firstPaymentMonth !== null && (
-                <li>
-                  С {label(help.family.firstPaymentMonth)} — по <Money value={help.family.rows[help.family.firstPaymentMonth - 1]!.payment} currency={currency} /> в месяц
-                </li>
-              )}
-              {help.family.lastPaymentMonth !== null && <li>Последний платёж — {label(help.family.lastPaymentMonth)}</li>}
-            </ul>
-            <p className="story-sub">Всего верну</p>
-            <p className="story-big"><Money value={help.family.totalReturned} currency={currency} /></p>
+            <p className="story-sub">Та же сумма к {label(help.compareMonth)}:</p>
+            <div className="story-totals">
+              <div>
+                <span>На вкладе под {plan.depositRatePct.toLocaleString('ru-RU')}%</span>
+                <strong><Money value={help.alternatives.deposit.nominal} currency={currency} /></strong>
+              </div>
+              <div>
+                <span>В ипотеке (освободившиеся деньги — на тот же вклад)</span>
+                <strong className="ok"><Money value={help.mortgage.nominal} currency={currency} /></strong>
+              </div>
+            </div>
             <p className="story-note">
-              Честно: при инфляции {plan.inflationPct.toLocaleString('ru-RU')}% в год это ≈{' '}
-              <Money value={help.real.returned} currency={currency} /> в сегодняшних деньгах из{' '}
-              <Money value={help.real.given} currency={currency} />, которые вы даёте. Разница — ваш подарок, и я это помню.
+              В сегодняшних деньгах при инфляции {plan.inflationPct.toLocaleString('ru-RU')}% в год: вклад ≈{' '}
+              <Money value={help.alternatives.deposit.today} currency={currency} />, ипотека ≈{' '}
+              <Money value={help.mortgage.today} currency={currency} />, наличные ≈{' '}
+              <Money value={help.alternatives.home.today} currency={currency} />.
             </p>
           </>
         ),
       },
-      {
-        title: 'Итог',
-        body: (
-          <div className="story-totals">
-            <div><span>Банку — меньше на</span><strong className="ok"><Money value={saved} currency={currency} /></strong></div>
-            <div><span>Вам вернётся</span><strong><Money value={help.family.totalReturned} currency={currency} /></strong></div>
-            <div>
-              <span>Моя выгода после возврата вам</span>
-              <strong className="ok"><Money value={saved - help.family.totalInterest} currency={currency} /></strong>
-            </div>
-            <p className="story-thanks">Спасибо!</p>
-          </div>
-        ),
-      },
     );
+    if (help.privateLoan) {
+      const pl = help.privateLoan;
+      slides.push({
+        title: 'Возврат займа',
+        body: (
+          <>
+            <ul className="story-list">
+              <li>{plan.ratePct > 0 ? `Ставка ${plan.ratePct.toLocaleString('ru-RU')}% годовых` : 'Без процентов'}</li>
+              {plan.graceMonths > 0 && <li>Отсрочка — {formatTerm(plan.graceMonths)}</li>}
+              {pl.firstPaymentMonth !== null && (
+                <li>С {label(pl.firstPaymentMonth)} — <Money value={pl.rows[pl.firstPaymentMonth - 1]!.payment} currency={currency} /> в месяц</li>
+              )}
+              {pl.lastPaymentMonth !== null && <li>Последний платёж — {label(pl.lastPaymentMonth)}</li>}
+            </ul>
+            <p className="story-sub">Всего к возврату</p>
+            <p className="story-big"><Money value={pl.totalReturned} currency={currency} /></p>
+            {help.real && (
+              <p className="story-note">
+                В сегодняшних деньгах при инфляции {plan.inflationPct.toLocaleString('ru-RU')}% — ≈{' '}
+                <Money value={help.real.returned} currency={currency} />.
+              </p>
+            )}
+          </>
+        ),
+      });
+    }
+    slides.push({
+      title: 'Итог',
+      body: (
+        <div className="story-totals">
+          <div><span>Процентов банку меньше на</span><strong className="ok"><Money value={saved} currency={currency} /></strong></div>
+          {help.rent && <div><span>Аренды меньше на</span><strong className="ok"><Money value={help.rent.rent} currency={currency} /></strong></div>}
+          {shorter > 0 && <div><span>Кредит короче на</span><strong>{formatTerm(shorter)}</strong></div>}
+          <div>
+            <span>К {label(help.compareMonth)} сумма в ипотеке даёт против вклада под {plan.depositRatePct.toLocaleString('ru-RU')}%</span>
+            <strong>×{ratioFormat.format(help.mortgage.nominal / (help.alternatives.deposit.nominal || 1))}</strong>
+          </div>
+        </div>
+      ),
+    });
   } else {
     slides.push({
-      title: 'Дальше — помощь',
-      body: <p className="story-sub">Добавьте транши в блоке «Помощь родных: заём» — тогда здесь появятся экономия, цена дня и план возврата.</p>,
+      title: 'Дополнительная сумма',
+      body: <p className="story-sub">Добавьте транши в блоке «Дополнительная сумма к взносу» — здесь появятся экономия, цена промедления и сравнение с вкладом.</p>,
     });
   }
 
@@ -229,7 +262,7 @@ export function StoryMode(props: Props) {
   };
 
   return (
-    <div className="story" ref={rootRef} role="dialog" aria-modal="true" aria-label="Рассказ по шагам">
+    <div className="story" ref={rootRef} role="dialog" aria-modal="true" aria-label="Обзор по шагам">
       <div className="story-slides">
         {slides.map((s, i) => (
           <article key={s.title} className={`story-slide${i === index ? ' current' : ''}`} aria-hidden={i !== index}>
@@ -253,7 +286,7 @@ export function StoryMode(props: Props) {
         <span className="story-tools">
           {document.fullscreenEnabled && <button type="button" onClick={fullscreen}>На весь экран</button>}
           <button type="button" onClick={() => window.print()}>Распечатать</button>
-          <button type="button" onClick={onClose} aria-label="Закрыть рассказ">✕</button>
+          <button type="button" onClick={onClose} aria-label="Закрыть обзор">✕</button>
         </span>
       </nav>
     </div>

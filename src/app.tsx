@@ -42,7 +42,7 @@ import { BigMoney, FxContext, Money } from './ui/Money';
 import { FREE_VARIABLE_HINTS, FreeVariablePicker } from './ui/FreeVariablePicker';
 import { NumberField } from './ui/NumberField';
 import { DebtRace } from './ui/DebtRace';
-import { FamilyHelpSection } from './ui/FamilyHelpSection';
+import { ExtraSumSection } from './ui/ExtraSumSection';
 import { HelpTimingSection } from './ui/HelpTimingSection';
 import { StoryMode } from './ui/StoryMode';
 import { LoanSection } from './ui/LoanSection';
@@ -164,7 +164,7 @@ export function App() {
   /** Кредит сценария как есть — вход для «Цены промедления»; объект один на расчёт, чтобы не пересчитывать кривую зря. */
   const helpLoan = useMemo(() => ('error' in result ? null : loanParamsForDeal(result.deal)), [result]);
 
-  /** Помощь родных в текущем сценарии (транши, возврат) — для блока займа, гонки и рассказа. */
+  /** Дополнительная сумма в текущем сценарии — для её блока, гонки и обзора по шагам. */
   const helpEval = useMemo(
     () => ('error' in result ? null : evaluateHelp(profile.help, result, currency, state.fxRates)),
     [profile.help, result, currency, state.fxRates],
@@ -191,7 +191,7 @@ export function App() {
             onRename={(name) => setProfile((p) => ({ ...p, name }))}
             onDelete={() => setState((s) => deleteProfile(s, s.activeProfileId))}
           />
-          {!('error' in result) && <button type="button" onClick={() => setStoryOpen(true)}>▶ Рассказ</button>}
+          {!('error' in result) && <button type="button" onClick={() => setStoryOpen(true)}>▶ Обзор по шагам</button>}
           <DataFileButtons state={state} onImport={setState} />
         </div>
       </header>
@@ -428,9 +428,8 @@ export function App() {
 
           {loan > 0 && (
             <>
-              <FamilyHelpSection plan={profile.help} onChange={(help) => setProfile((p) => ({ ...p, help }))}
-                evaluation={helpEval} issueDate={issueDate} targetPayment={scenario.targetPayment}
-                onStory={() => setStoryOpen(true)} />
+              <ExtraSumSection plan={profile.help} onChange={(help) => setProfile((p) => ({ ...p, help }))}
+                evaluation={helpEval} issueDate={issueDate} targetPayment={scenario.targetPayment} />
               {helpOk && <DebtRace evaluation={helpOk} currency={currency} issueDate={issueDate} />}
               <HelpTimingSection loan={helpLoan!} noHelp={result.schedule} currency={currency} issueDate={issueDate}
                 defaultAmount={helpOk ? helpOk.totalHelp : undefined} equivalents={helpOk?.equivalents} />

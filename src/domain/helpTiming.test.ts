@@ -24,10 +24,10 @@ describe('helpAfterPayment', () => {
     expect(months).toBe(143);
     expect(r.months).toBe(months);
     expect(r.schedule.rows[0]!.payment).toBeCloseTo(payment, 6);
-    // Без помощи: 1 321,30 × 240 − 120 000 ≈ 197 114 процентов; с помощью 20 000 в день выдачи — на 97 месяцев меньше.
+    // Без суммы: 1 321,30 × 240 − 120 000 ≈ 197 114 процентов; с суммой 20 000 в день выдачи — на 97 месяцев меньше.
     const without = buildAnnuitySchedule({ principal: 120_000, annualRatePct: 12, termMonths: 240 });
     expect(without.totalInterest).toBeCloseTo(payment * 240 - 120_000, 4);
-    // Сложный процент: экономия процентов во много раз больше самой помощи.
+    // Сложный процент: экономия процентов во много раз больше самой суммы.
     expect(without.totalInterest - r.totalInterest).toBeGreaterThan(5 * 20_000);
     // А «уменьшить платёж» экономит ровно проценты на 20 000 как на отдельный кредит.
     const reducePayment = helpAfterPayment({ ...input, mode: 'reducePayment' }, 0);
@@ -52,14 +52,14 @@ describe('helpAfterPayment', () => {
     expect(delay).toBeCloseTo(200 - extraPrincipal * perUnit, 0);
   });
 
-  it('чем позже помощь, тем больше переплата — в обоих режимах', () => {
+  it('чем позже сумма, тем больше переплата — в обоих режимах', () => {
     for (const mode of ['reduceTerm', 'reducePayment'] as const) {
       const curve = helpDelayCurve({ loan: loan(120_000, 12, 240), amount: 20_000, mode }, 24, (k) => k * 30);
       for (let i = 1; i < curve.length; i++) expect(curve[i]!.totalInterest).toBeGreaterThan(curve[i - 1]!.totalInterest);
     }
   });
 
-  it('помощь больше кредита — процентов нет; кредит уже закрыт — помощь ничего не меняет', () => {
+  it('сумма больше кредита — процентов нет; кредит уже закрыт — сумма ничего не меняет', () => {
     expect(helpAfterPayment({ loan: loan(10_000, 12, 12), amount: 20_000, mode: 'reduceTerm' }, 0).totalInterest).toBe(0);
     const late = helpAfterPayment({ loan: loan(10_000, 12, 12), amount: 5_000, mode: 'reduceTerm' }, 20);
     expect(late.totalInterest).toBeCloseTo(buildAnnuitySchedule({ principal: 10_000, annualRatePct: 12, termMonths: 12 }).totalInterest, 8);
@@ -73,7 +73,7 @@ describe('helpAfterPayment', () => {
   });
 
   it('некорректный ввод — RangeError по-русски', () => {
-    expect(() => helpAfterPayment({ loan: loan(10_000, 12, 12), amount: -1, mode: 'reduceTerm' }, 0)).toThrow(/Сумма помощи/);
+    expect(() => helpAfterPayment({ loan: loan(10_000, 12, 12), amount: -1, mode: 'reduceTerm' }, 0)).toThrow(/Дополнительная сумма/);
     expect(() => helpAfterPayment({ loan: loan(10_000, 12, 12), amount: 1, mode: 'reduceTerm' }, 1.5)).toThrow(RangeError);
   });
 });

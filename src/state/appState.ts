@@ -10,7 +10,10 @@
  * 7 — профили и компоненты; 8 — дата выдачи кредита у сценария (календарь платежей), в v7 её нет → null;
  * 9 — реальные кредиты с журналом событий у профиля (`loans`), в v7–8 их нет → [];
  * 10 — тип графика (аннуитет / дифференцированный) у карточки банка, сценария и реального кредита;
- * 11 — помощь родных у профиля (`help`: заём траншами, возврат, инфляция, эквиваленты), в v7–10 её нет → newHelpPlan().
+ * 11 — дополнительная сумма на квартиру у профиля (`help`: заём траншами, возврат, инфляция, эквиваленты),
+ *      в v7–10 её нет → newHelpPlan();
+ * 12 — у `help` ставка вклада для сравнения, аренда в месяц, сколько откладываю в месяц и флаг `repay`
+ *      (сумма — заём, который возвращается); в v11 → по умолчанию, `repay` = true (в v11 заём был всегда).
  * При несовместимом изменении формата — поднять STATE_VERSION и дописать миграцию.
  */
 
@@ -32,7 +35,7 @@ import { parseLoan, type RealLoan } from './loans';
 import { parseAccount, parseProduct } from './parseShared';
 import { sampleProducts } from './sampleProducts';
 
-export const STATE_VERSION = 11;
+export const STATE_VERSION = 12;
 
 /** Квартира — компонент: цена в своей валюте (она же валюта сделки). */
 export interface Apartment {
@@ -103,45 +106,54 @@ export interface Profile {
   comparedScenarioIds: string[];
   /** Реальные (взятые) кредиты с хроникой событий. */
   loans: RealLoan[];
-  /** Помощь родных на первый взнос и досрочку (заём) — для «Цены промедления» и рассказа. */
+  /** Дополнительная сумма на первый взнос и досрочку (заём) — для «Цены промедления», сравнения и рассказа. */
   help: HelpPlan;
 }
 
-/** Транш помощи: month 0 — в первый взнос (до сделки), k ≥ 1 — после k-го платежа банку. */
+/** Транш: month 0 — в первый взнос (до сделки), k ≥ 1 — после k-го платежа банку. */
 export interface HelpTranche {
   id: string;
   month: number;
   amount: number;
 }
 
-/** «Цена дня промедления = 0,4 обеда»: понятная вещь и её цена в валюте плана помощи. */
+/** «Цена дня промедления = 0,4 обеда»: понятная вещь и её цена в валюте суммы. */
 export interface Equivalent {
   id: string;
   name: string;
   price: number;
 }
 
-/** Помощь родных: заём траншами, условия возврата; суммы — в валюте плана. */
+/** Дополнительная сумма: заём траншами, условия возврата, с чем сравнивать; суммы — в валюте плана. */
 export interface HelpPlan {
   currency: Currency;
   tranches: HelpTranche[];
+  /** Сумма — частный заём, который возвращается по условиям ниже; false — свои деньги, возвращать нечего. */
+  repay: boolean;
   /** % годовых по займу; 0 — беспроцентный. */
   ratePct: number;
   /** Месяцев бесплатной отсрочки от выдачи ипотеки. */
   graceMonths: number;
-  /** Сколько возвращать родным в месяц после отсрочки. */
+  /** Сколько возвращать по займу в месяц после отсрочки. */
   monthlyPayment: number;
   /** Как банк учитывает транши после выдачи. */
   mode: PrepaymentMode;
-  /** Инфляция, % в год — чтобы честно показать, сколько помощь стоит помогающим. */
+  /** Инфляция, % в год — одна для всех вариантов «куда пристроить сумму». */
   inflationPct: number;
   equivalents: Equivalent[];
+  /** Ставка вклада для сравнения, % годовых. */
+  depositRatePct: number;
+  /** Аренда в месяц сейчас; NaN — не задано. */
+  rentPerMonth: number;
+  /** Сколько я сам откладываю в месяц (без суммы копил бы её столько месяцев); NaN — не задано. */
+  savingPerMonth: number;
 }
 
 export function newHelpPlan(currency: Currency = 'BYN'): HelpPlan {
   return {
     currency,
     tranches: [],
+    repay: false,
     ratePct: 0,
     graceMonths: 12,
     monthlyPayment: 500,
@@ -151,6 +163,9 @@ export function newHelpPlan(currency: Currency = 'BYN'): HelpPlan {
       { id: newId(), name: 'обед в кафе', price: 20 },
       { id: newId(), name: 'чашка кофе', price: 6 },
     ],
+    depositRatePct: 10,
+    rentPerMonth: Number.NaN,
+    savingPerMonth: Number.NaN,
   };
 }
 
@@ -561,13 +576,13 @@ function parseProfile(raw: unknown, index: number, productIds: Set<string>): Pro
     comparedScenarioIds,
     // До версии 9 реальных кредитов не было.
     loans: Array.isArray(r.loans) ? uniqueLoans(r.loans.map((x, i) => parseLoan(x, i, where))) : [],
-    // До версии 11 помощи родных не было.
+    // До версии 11 дополнительной суммы не было.
     help: r.help === undefined ? newHelpPlan() : parseHelpPlan(r.help, where),
   };
 }
 
 function parseHelpPlan(raw: unknown, where: string): HelpPlan {
-  const w = `${where}, помощь родных`;
+  const w = `${where}, дополнительная сумма`;
   const r = asObject(raw, w);
   const tranches = asArray(r, 'tranches', w).map((item, i): HelpTranche => {
     const iw = `${w}, транш №${i + 1}`;
@@ -579,17 +594,23 @@ function parseHelpPlan(raw: unknown, where: string): HelpPlan {
     const x = asObject(item, iw);
     return { id: readId(x, iw), name: readString(x, 'name'), price: readNumber(x, 'price', iw) };
   });
-  uniqueIds(tranches, 'траншей помощи');
+  uniqueIds(tranches, 'траншей');
+  const defaults = newHelpPlan();
   uniqueIds(equivalents, 'эквивалентов');
   return {
     currency: readCurrency(r, w),
     tranches,
+    repay: typeof r.repay === 'boolean' ? r.repay : r.depositRatePct === undefined,
     ratePct: readNumber(r, 'ratePct', w),
     graceMonths: readNumber(r, 'graceMonths', w),
     monthlyPayment: readNumber(r, 'monthlyPayment', w),
     mode: readMode(r, w),
     inflationPct: readNumber(r, 'inflationPct', w),
     equivalents,
+    // До версии 12 этих полей не было.
+    depositRatePct: r.depositRatePct === undefined ? defaults.depositRatePct : readNumber(r, 'depositRatePct', w),
+    rentPerMonth: r.rentPerMonth === undefined ? defaults.rentPerMonth : readNumber(r, 'rentPerMonth', w),
+    savingPerMonth: r.savingPerMonth === undefined ? defaults.savingPerMonth : readNumber(r, 'savingPerMonth', w),
   };
 }
 

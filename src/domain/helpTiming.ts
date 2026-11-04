@@ -2,7 +2,7 @@ import { buildSchedule } from './annuity';
 import type { PaymentSchedule, PrepaymentMode, VariableLoanParams } from './types';
 
 /**
- * «Цена промедления»: сколько стоит каждый день, пока дополнительная сумма (помощь на взнос) не дошла до долга.
+ * «Цена промедления»: сколько стоит каждый день, пока дополнительная сумма к первому взносу не дошла до долга.
  *
  * Кредит берётся без этой суммы, а сама сумма вносится в долг после платежа № k (k = 0 — в день выдачи, то есть
  * это просто больший первый взнос). Режим — как у досрочного взноса:
@@ -14,9 +14,9 @@ import type { PaymentSchedule, PrepaymentMode, VariableLoanParams } from './type
  * с ежемесячной капитализацией и «съедает» последние месяцы платежей.
  */
 export interface HelpTimingInput {
-  /** Кредит без помощи: сумма, срок, ставки, свои досрочные взносы. */
+  /** Кредит без дополнительной суммы: сумма, срок, ставки, свои досрочные взносы. */
   loan: VariableLoanParams;
-  /** Сумма помощи в валюте кредита. */
+  /** Дополнительная сумма в валюте кредита. */
   amount: number;
   mode: PrepaymentMode;
 }
@@ -33,11 +33,11 @@ function outcome(schedule: PaymentSchedule): HelpOutcome {
 }
 
 function validate({ loan, amount }: HelpTimingInput): void {
-  if (!Number.isFinite(amount) || amount < 0) throw new RangeError('Сумма помощи должна быть неотрицательным числом');
-  if (!Number.isFinite(loan.principal) || loan.principal <= 0) throw new RangeError('Нет кредита — помогать нечему');
+  if (!Number.isFinite(amount) || amount < 0) throw new RangeError('Дополнительная сумма должна быть неотрицательным числом');
+  if (!Number.isFinite(loan.principal) || loan.principal <= 0) throw new RangeError('Нет кредита — вносить сумму некуда');
 }
 
-/** Помощь внесена в долг после платежа № k (0 — в день выдачи). Если кредит к этому времени закрыт — помощь не нужна. */
+/** Сумма внесена в долг после платежа № k (0 — в день выдачи). Если кредит к этому времени закрыт — сумма ничего не меняет. */
 export function helpAfterPayment(input: HelpTimingInput, k: number): HelpOutcome {
   validate(input);
   const { loan, amount, mode } = input;
@@ -48,7 +48,7 @@ export function helpAfterPayment(input: HelpTimingInput, k: number): HelpOutcome
   return outcome(buildSchedule({ ...loan, atIssue: { amount, mode } }));
 }
 
-/** Точка кривой: помощь пришла в день day от выдачи (ровно в день платежа № payment, сразу после него). */
+/** Точка кривой: сумма пришла в день day от выдачи (ровно в день платежа № payment, сразу после него). */
 export interface DelayPoint {
   payment: number;
   day: number;
@@ -57,7 +57,7 @@ export interface DelayPoint {
 }
 
 /**
- * Кривая «переплата в зависимости от дня, когда пришла помощь»: точки в дни платежей 0…maxPayment.
+ * Кривая «переплата в зависимости от дня, когда пришла сумма»: точки в дни платежей 0…maxPayment.
  * dayOfPayment(k) — номер дня платежа k от выдачи (по календарю или 365/12 на месяц без дат).
  */
 export function helpDelayCurve(
@@ -74,8 +74,8 @@ export function helpDelayCurve(
 }
 
 /**
- * Переплата, если помощь придёт в день day от выдачи. Между датами платежей — пропорционально дням: банк начисляет
- * проценты на остаток каждый день, и пока помощь не дошла, лишние проценты набегают на неё равномерно.
+ * Переплата, если сумма придёт в день day от выдачи. Между датами платежей — пропорционально дням: банк начисляет
+ * проценты на остаток каждый день, и пока сумма не дошла, лишние проценты набегают на неё равномерно.
  * Позже последней точки кривой — переплата последней точки.
  */
 export function interestAtDay(curve: DelayPoint[], day: number): number {

@@ -395,7 +395,7 @@ td [data-tip]:hover::after { left: auto; right: 0; }
 .help-timing:fullscreen .cell { height: 22px; }
 .ticker-line .money { white-space: nowrap; }
 
-/* --- Помощь родных: заём --- */
+/* --- Дополнительная сумма к взносу --- */
 .tranches { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .tranche { display: grid; grid-template-columns: minmax(150px, 220px) minmax(150px, 220px) 1fr auto; gap: 10px; align-items: end; width: 100%; }
 .tranche > small { padding-bottom: 9px; }
@@ -404,12 +404,12 @@ td [data-tip]:hover::after { left: auto; right: 0; }
   .tranche > small { grid-column: 1 / -1; grid-row: 2; padding: 0; }
   .tranche > span:empty { display: none; }
 }
-.family-help .fields { margin-top: 12px; }
-.family-honest {
+.privateLoan-help .fields { margin-top: 12px; }
+.privateLoan-honest {
   margin: 14px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--accent-soft);
   color: var(--text-2); font-size: 0.9rem; line-height: 1.5;
 }
-.family-honest .money { white-space: nowrap; }
+.privateLoan-honest .money { white-space: nowrap; }
 
 /* --- Гонка долгов --- */
 .race-clock { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; margin: 4px 0 10px; }
@@ -420,7 +420,7 @@ td [data-tip]:hover::after { left: auto; right: 0; }
 .race-bar { height: 100%; border-radius: 999px; background: var(--accent); min-width: 0; }
 .lane-nohelp .race-bar { background: var(--muted); }
 .lane-help .race-bar { background: var(--accent); }
-.lane-family .race-bar { background: var(--ok); }
+.lane-loan .race-bar { background: var(--ok); }
 .race-lane.done .race-label span:last-child { color: var(--ok); }
 .race input[type='range'] { padding: 0; border: none; box-shadow: none; }
 
@@ -475,3 +475,7 @@ td [data-tip]:hover::after { left: auto; right: 0; }
   .story-nav { display: none; }
   .story * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
+.repay-toggle { margin-top: 14px; align-self: start; }
+.placement td:first-child { font-weight: 600; text-align: left; }
+.placement td:last-child { text-align: left; white-space: normal; color: var(--text-2); min-width: 180px; }
+.placement-mortgage td { background: var(--ok-soft); }

@@ -21,13 +21,13 @@ import { BigMoney, Money } from './Money';
 import { NumberField } from './NumberField';
 
 interface Props {
-  /** Кредит сценария как есть (без помощи), со своими досрочными взносами. */
+  /** Кредит сценария как есть (без суммы), со своими досрочными взносами. */
   loan: VariableLoanParams;
-  /** Его график — «без помощи». */
+  /** Его график — «без суммы». */
   noHelp: PaymentSchedule;
   currency: Currency;
   issueDate: CalendarDate | undefined;
-  /** Сумма по умолчанию (если в этом браузере ещё не вводили): все транши помощи родных. */
+  /** Сумма по умолчанию (если в этом браузере ещё не вводили): все транши дополнительной суммы. */
   defaultAmount?: number;
   /** «Обед в кафе — 20»: в валюте сделки. */
   equivalents?: { name: string; price: number }[];
@@ -81,14 +81,14 @@ export function Ticker({ perDay, currency }: { perDay: number; currency: Currenc
 
 /**
  * «Тетрис» месяцев: каждая клетка — платёж, ряд — год. Оранжевая часть — проценты в этом месяце (бледная — сколько
- * было бы без помощи). Зелёные клетки — платежи, которых не будет.
+ * было бы без суммы). Зелёные клетки — платежи, которых не будет.
  */
 export function MonthGrid({ noHelp, withHelp, helpMonth }: { noHelp: PaymentSchedule; withHelp: PaymentSchedule; helpMonth: number }) {
   const maxInterest = noHelp.rows.reduce((m, r) => Math.max(m, r.interest), 0) || 1;
   const years = Math.ceil(noHelp.rows.length / 12);
   return (
     <div className="month-grid" role="img"
-      aria-label={`Платежей без помощи: ${noHelp.rows.length}, с помощью: ${withHelp.rows.length}`}>
+      aria-label={`Платежей без суммы: ${noHelp.rows.length}, с суммой: ${withHelp.rows.length}`}>
       {Array.from({ length: years }, (_, y) => (
         <div className="month-row" key={y}>
           <span className="month-year">{y + 1}</span>
@@ -100,7 +100,7 @@ export function MonthGrid({ noHelp, withHelp, helpMonth }: { noHelp: PaymentSche
             const gone = !row || row.payment < 1e-6;
             const title = gone
               ? `Платёж ${i + 1}: его не будет`
-              : `Платёж ${i + 1}: проценты ${formatMoney(row.interest)} (без помощи ${formatMoney(base.interest)})`;
+              : `Платёж ${i + 1}: проценты ${formatMoney(row.interest)} (без суммы ${formatMoney(base.interest)})`;
             return (
               <span key={m} className={`cell${gone ? ' gone' : ''}${i + 1 === helpMonth ? ' arrival' : ''}`} title={title}>
                 <i className="ghost" style={{ height: `${(base.interest / maxInterest) * 100}%` }} />
@@ -115,7 +115,7 @@ export function MonthGrid({ noHelp, withHelp, helpMonth }: { noHelp: PaymentSche
 }
 
 /**
- * «Цена промедления»: дополнительная сумма (помощь на первый взнос) против дня, когда она дойдёт до долга.
+ * «Цена промедления»: дополнительная сумма к первому взносу против дня, когда она дойдёт до долга.
  * Расчёт — domain/helpTiming.ts; между датами платежей переплата растёт пропорционально дням.
  */
 export function HelpTimingSection({ loan, noHelp, currency, issueDate, defaultAmount, equivalents = [] }: Props) {
@@ -156,7 +156,7 @@ export function HelpTimingSection({ loan, noHelp, currency, issueDate, defaultAm
   const later = interestAtDay(curve, day);
   const perDayNow = costPerDay(curve, 0);
   const perDayLater = costPerDay(curve, day);
-  /** Последний платёж, после которого пришла помощь (для «тетриса»). */
+  /** Последний платёж, после которого пришла сумма (для «тетриса»). */
   const k = curve.filter((p) => p.day <= day).at(-1)!.payment;
   const withHelp = helpAfterPayment(input, k).schedule;
   const nowSchedule = helpAfterPayment(input, 0).schedule;
@@ -196,7 +196,7 @@ export function HelpTimingSection({ loan, noHelp, currency, issueDate, defaultAm
         <label className="field">
           <span>Как её учесть</span>
           <select value={mode} onChange={(e) => setMode(e.target.value as PrepaymentMode)}
-            title="Сократить срок — платёж как без помощи, кредит закроется раньше. Уменьшить платёж — срок тот же, платёж меньше.">
+            title="Сократить срок — платёж как без суммы, кредит закроется раньше. Уменьшить платёж — срок тот же, платёж меньше.">
             <option value="reduceTerm">Сократить срок</option>
             <option value="reducePayment">Уменьшить платёж</option>
           </select>
@@ -206,18 +206,18 @@ export function HelpTimingSection({ loan, noHelp, currency, issueDate, defaultAm
             Деньги придут через <strong>{day}</strong> дн.{arrival && <> — {arrival}</>}
           </span>
           <input type="range" min={0} max={maxDay} step={1} value={day} onChange={(e) => setDelay(Number(e.target.value))}
-            aria-label="Через сколько дней после выдачи кредита придёт помощь" />
+            aria-label="Через сколько дней после выдачи кредита придёт сумма" />
         </label>
       </div>
 
       <div className="summary help-summary">
         <div>
-          <span>Без помощи</span>
+          <span>Без суммы</span>
           <strong className="interest"><BigMoney value={without} currency={currency} /></strong>
           <span className="chip neutral">переплата за {formatTerm(noHelp.rows.length)}</span>
         </div>
         <div>
-          <span>Помощь в день выдачи</span>
+          <span>Сумма в день выдачи</span>
           <strong className="ok"><BigMoney value={without - now.totalInterest} currency={currency} /></strong>
           <span className="chip good">
             экономия · {mode === 'reduceTerm'
@@ -226,7 +226,7 @@ export function HelpTimingSection({ loan, noHelp, currency, issueDate, defaultAm
           </span>
         </div>
         <div>
-          <span>Помощь через {day} дн.</span>
+          <span>Сумма через {day} дн.</span>
           <strong className="ok"><BigMoney value={without - later} currency={currency} /></strong>
           <span className={`chip ${day > 0 ? 'bad' : 'neutral'}`}>
             промедление стоит <Money value={later - now.totalInterest} currency={currency} />
@@ -241,7 +241,7 @@ export function HelpTimingSection({ loan, noHelp, currency, issueDate, defaultAm
       </div>
 
       <p className="ticker-line">
-        Пока открыт этот экран, помощь, которая ещё не дошла до долга, обошлась в <Ticker perDay={perDayNow} currency={currency} />.
+        Пока открыт этот экран, сумма, которая ещё не внесена в долг, обошлась в <Ticker perDay={perDayNow} currency={currency} />.
         Каждый час — <Money value={perDayNow / 24} currency={currency} />.
       </p>
 
@@ -266,7 +266,7 @@ export function HelpTimingSection({ loan, noHelp, currency, issueDate, defaultAm
       <h3>Месяцы платежей</h3>
       <MonthGrid noHelp={noHelp} withHelp={withHelp} helpMonth={k + 1} />
       <p className="hint">
-        Клетка — один платёж, ряд — год кредита. Оранжевое — проценты в этом месяце (бледное — сколько было бы без помощи).
+        Клетка — один платёж, ряд — год кредита. Оранжевое — проценты в этом месяце (бледное — сколько было бы без суммы).
         {goneMonths > 0 && <> <strong className="ok">Зелёных клеток: {goneMonths}</strong> — платежей на{' '}
           <Money value={goneMoney} currency={currency} />, которых не будет.</>}
       </p>

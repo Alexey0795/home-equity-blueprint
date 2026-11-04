@@ -2,11 +2,11 @@ import { buildSchedule } from './annuity';
 import type { PaymentSchedule, PrepaymentMode, VariableLoanParams } from './types';
 
 /**
- * Заём от родных на первый взнос и досрочные взносы.
+ * Частный заём на первый взнос и досрочные взносы (например, от работодателя).
  *
  * Деньги приходят траншами: месяц 0 — до сделки (идут в первый взнос), месяц k — после k-го платежа банку
- * (идут досрочным взносом). Возврат родным: первые graceMonths месяцев после выдачи ипотеки — бесплатная отсрочка
- * (ни платежей, ни процентов), потом каждый месяц monthlyPayment, проценты — ставка / 12 на остаток долга родным.
+ * (идут досрочным взносом). Возврат займа: первые graceMonths месяцев после выдачи ипотеки — бесплатная отсрочка
+ * (ни платежей, ни процентов), потом каждый месяц monthlyPayment, проценты — ставка / 12 на остаток долга по займу.
  */
 export interface Tranche {
   /** 0 — в первый взнос (до сделки), k ≥ 1 — после k-го платежа банку. */
@@ -14,34 +14,34 @@ export interface Tranche {
   amount: number;
 }
 
-export interface FamilyLoanTerms {
+export interface PrivateLoanTerms {
   tranches: Tranche[];
   /** % годовых; 0 — беспроцентный. */
   ratePct: number;
-  /** Сколько месяцев от выдачи ипотеки ничего не платить родным (и проценты не идут). */
+  /** Сколько месяцев от выдачи ипотеки ничего не платить по займу (и проценты не идут). */
   graceMonths: number;
   /** Сколько возвращать в месяц после отсрочки. */
   monthlyPayment: number;
 }
 
-export interface FamilyRow {
+export interface PrivateLoanRow {
   month: number;
-  /** Сколько родные дали в этом месяце. */
+  /** Сколько получено по займу в этом месяце. */
   lent: number;
   interest: number;
   payment: number;
-  /** Долг родным на конец месяца. */
+  /** Долг по займу на конец месяца. */
   balance: number;
 }
 
-export interface FamilyRepayment {
-  rows: FamilyRow[];
+export interface PrivateLoanRepayment {
+  rows: PrivateLoanRow[];
   totalLent: number;
   totalInterest: number;
   totalReturned: number;
-  /** Месяц первого платежа родным; null — платить нечего. */
+  /** Месяц первого платежа по займу; null — платить нечего. */
   firstPaymentMonth: number | null;
-  /** Месяц последнего платежа родным; null — платить нечего. */
+  /** Месяц последнего платежа по займу; null — платить нечего. */
   lastPaymentMonth: number | null;
 }
 
@@ -55,8 +55,8 @@ function validateTranches(tranches: Tranche[]): void {
   }
 }
 
-/** График возврата займа родным. */
-export function familyRepayment(terms: FamilyLoanTerms): FamilyRepayment {
+/** График возврата частного займа. */
+export function privateLoanRepayment(terms: PrivateLoanTerms): PrivateLoanRepayment {
   const { tranches, ratePct, graceMonths, monthlyPayment } = terms;
   validateTranches(tranches);
   if (!Number.isFinite(ratePct) || ratePct < 0) throw new RangeError('Ставка займа должна быть неотрицательным числом');
@@ -64,12 +64,12 @@ export function familyRepayment(terms: FamilyLoanTerms): FamilyRepayment {
   const totalLent = tranches.reduce((s, t) => s + t.amount, 0);
   const empty = { rows: [], totalLent, totalInterest: 0, totalReturned: 0, firstPaymentMonth: null, lastPaymentMonth: null };
   if (totalLent <= PAID_OFF) return empty;
-  if (!Number.isFinite(monthlyPayment) || monthlyPayment <= 0) throw new RangeError('Укажите, сколько возвращать родным в месяц');
+  if (!Number.isFinite(monthlyPayment) || monthlyPayment <= 0) throw new RangeError('Укажите, сколько возвращать по займу в месяц');
   const r = ratePct / 100 / 12;
   const lastTranche = Math.max(...tranches.map((t) => t.month));
   const lentIn = (m: number) => tranches.filter((t) => t.month === m).reduce((s, t) => s + t.amount, 0);
 
-  const rows: FamilyRow[] = [];
+  const rows: PrivateLoanRow[] = [];
   let balance = lentIn(0);
   let totalInterest = 0;
   let totalReturned = 0;
@@ -81,7 +81,7 @@ export function familyRepayment(terms: FamilyLoanTerms): FamilyRepayment {
     if (month > graceMonths && balance > PAID_OFF) {
       interest = balance * r;
       if (monthlyPayment <= interest + 1e-9) {
-        throw new RangeError('Платёж родным не покрывает проценты по займу — долг не уменьшается');
+        throw new RangeError('Платёж по займу не покрывает проценты по займу — долг не уменьшается');
       }
       payment = Math.min(monthlyPayment, balance + interest);
       balance += interest - payment;
@@ -96,11 +96,11 @@ export function familyRepayment(terms: FamilyLoanTerms): FamilyRepayment {
     rows.push({ month, lent, interest, payment, balance });
     if (balance === 0 && month >= lastTranche) break;
   }
-  if (balance > PAID_OFF) throw new RangeError('Заём родным не возвращается и за 100 лет — увеличьте платёж');
+  if (balance > PAID_OFF) throw new RangeError('Заём не возвращается и за 100 лет — увеличьте платёж');
   return { rows, totalLent, totalInterest, totalReturned, firstPaymentMonth: first, lastPaymentMonth: last };
 }
 
-/** График банка, если транши помощи идут в первый взнос (месяц 0) и досрочными взносами (месяц k). */
+/** График банка, если транши идут в первый взнос (месяц 0) и досрочными взносами (месяц k). */
 export function bankScheduleWithHelp(loan: VariableLoanParams, tranches: Tranche[], mode: PrepaymentMode): PaymentSchedule {
   validateTranches(tranches);
   const atStart = tranches.filter((t) => t.month === 0).reduce((s, t) => s + t.amount, 0);
@@ -120,8 +120,8 @@ export function todayValue(amount: number, month: number, inflationPct: number):
   return amount / (1 + inflationPct / 100) ** (month / 12);
 }
 
-/** Для помогающих: сколько они дали и сколько им вернётся — в сегодняшних деньгах. */
-export function familyRealValue(repayment: FamilyRepayment, tranches: Tranche[], inflationPct: number): { given: number; returned: number } {
+/** Для заимодавца: сколько дано и сколько вернётся — в сегодняшних деньгах. */
+export function privateLoanRealValue(repayment: PrivateLoanRepayment, tranches: Tranche[], inflationPct: number): { given: number; returned: number } {
   if (!Number.isFinite(inflationPct) || inflationPct <= -100) throw new RangeError('Инфляция должна быть числом больше −100%');
   const given = tranches.reduce((s, t) => s + todayValue(t.amount, t.month, inflationPct), 0);
   const returned = repayment.rows.reduce((s, row) => s + todayValue(row.payment, row.month, inflationPct), 0);

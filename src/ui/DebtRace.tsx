@@ -24,19 +24,19 @@ interface Lane {
 }
 
 /**
- * «Гонка долгов»: остаток долга банку без помощи, с помощью и долг родным — полосками, которые тают месяц за месяцем.
+ * «Гонка долгов»: остаток долга банку без суммы и с ней (и остаток частного займа) — полосками, которые тают месяц за месяцем.
  * Кнопка «Старт» прокручивает весь срок за DURATION_S секунд; ползунок — вручную.
  */
 export function DebtRace({ evaluation, currency, issueDate }: Props) {
-  const { noHelp, withHelp, family, loan, tranches } = evaluation;
+  const { noHelp, withHelp, privateLoan, loan, tranches } = evaluation;
   const atStart = tranches.filter((t) => t.month === 0).reduce((s, t) => s + t.amount, 0);
   const lanes: Lane[] = [
-    { key: 'no', name: 'Банку — без помощи', className: 'lane-nohelp', end: noHelp.rows.length,
+    { key: 'no', name: 'Банк — без суммы', className: 'lane-nohelp', end: noHelp.rows.length,
       balance: (m) => (m === 0 ? loan.principal : noHelp.rows[m - 1]?.balance ?? 0) },
-    { key: 'with', name: 'Банку — с помощью', className: 'lane-help', end: withHelp.rows.length,
+    { key: 'with', name: 'Банк — с суммой', className: 'lane-help', end: withHelp.rows.length,
       balance: (m) => (m === 0 ? Math.max(0, loan.principal - atStart) : withHelp.rows[m - 1]?.balance ?? 0) },
-    { key: 'family', name: 'Родным', className: 'lane-family', end: family.lastPaymentMonth ?? 0,
-      balance: (m) => (m === 0 ? atStart : family.rows[m - 1]?.balance ?? 0) },
+    ...(privateLoan ? [{ key: 'loan', name: 'Частный заём', className: 'lane-loan', end: privateLoan.lastPaymentMonth ?? 0,
+      balance: (m: number) => (m === 0 ? atStart : privateLoan.rows[m - 1]?.balance ?? 0) }] : []),
   ];
   const total = Math.max(...lanes.map((l) => l.end), 1);
   const scale = loan.principal || 1;
@@ -79,10 +79,10 @@ export function DebtRace({ evaluation, currency, issueDate }: Props) {
           {playing ? '❚❚ Пауза' : month >= total ? '↺ Ещё раз' : '▶ Старт'}
         </button>
       </div>
-      <p className="hint">Остаток долга месяц за месяцем. Помощь родных делает синюю полоску короче — и банк отстаёт.</p>
+      <p className="hint">Остаток долга месяц за месяцем: без дополнительной суммы и с ней.</p>
       <div className="race-clock" aria-live="off">{when}</div>
       <div className="race-lanes">
-        {lanes.filter((l) => l.end > 0 || l.key !== 'family').map((lane) => {
+        {lanes.filter((l) => l.end > 0 || l.key !== 'loan').map((lane) => {
           const value = lane.balance(Math.min(m, lane.end));
           const done = m >= lane.end;
           return (

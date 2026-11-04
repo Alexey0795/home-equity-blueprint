@@ -81,7 +81,7 @@ describe('миграция старых версий в профиль «Я»', 
       activeScenarioId: 's1',
       scenarios: [{ id: 's1', name: 'Старый', price: 300_000, downPayment: 60_000, annualRatePct: 12, termMonths: 240 }],
     }));
-    expect(state.version).toBe(11);
+    expect(state.version).toBe(12);
     const profile = activeProfile(state);
     expect(profile.name).toBe('Я');
     expect(profile.apartments).toEqual([expect.objectContaining({ currency: 'BYN', price: 300_000 })]);
@@ -258,8 +258,8 @@ describe('версия 10: тип графика', () => {
   });
 });
 
-describe('версия 11: помощь родных', () => {
-  it('данные v10 открываются с пустым планом помощи; транши и условия переживают сохранение; битый транш — понятная ошибка', () => {
+describe('версии 11–12: дополнительная сумма', () => {
+  it('данные v10 открываются без дополнительной суммы; транши и условия переживают сохранение; битый транш — понятная ошибка', () => {
     const raw = JSON.parse(serializeState(defaultState()));
     raw.version = 10;
     delete raw.profiles[0].help;
@@ -272,7 +272,16 @@ describe('версия 11: помощь родных', () => {
     help.tranches = [{ id: 't1', month: 0, amount: 20_000 }, { id: 't2', month: 12, amount: 5_000 }];
     help.ratePct = 2.5;
     help.currency = 'USD';
+    help.rentPerMonth = 1_200;
     expect(activeProfile(roundTrip(state)).help).toEqual(help);
+
+    const v11 = JSON.parse(serializeState(state));
+    v11.version = 11;
+    delete v11.profiles[0].help.rentPerMonth;
+    delete v11.profiles[0].help.depositRatePct;
+    const fromV11 = activeProfile(parseState(JSON.stringify(v11))).help;
+    expect(fromV11.depositRatePct).toBe(10);
+    expect(fromV11.rentPerMonth).toBeNaN();
 
     const bad = JSON.parse(serializeState(state));
     bad.profiles[0].help.tranches[1].amount = 'много';

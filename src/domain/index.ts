@@ -9,4 +9,5 @@ export * from './prepaymentPlan';
 export * from './calendar';
 export * from './journal';
 export * from './helpTiming';
-export * from './familyLoan';
+export * from './privateLoan';
+export * from './placement';
