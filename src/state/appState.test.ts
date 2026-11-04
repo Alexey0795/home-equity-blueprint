@@ -82,7 +82,7 @@ describe('миграция старых версий в профиль «Я»', 
       activeScenarioId: 's1',
       scenarios: [{ id: 's1', name: 'Старый', price: 300_000, downPayment: 60_000, annualRatePct: 12, termMonths: 240 }],
     }));
-    expect(state.version).toBe(13);
+    expect(state.version).toBe(14);
     const profile = activeProfile(state);
     expect(profile.name).toBe('Я');
     expect(profile.apartments).toEqual([expect.objectContaining({ currency: 'BYN', price: 300_000 })]);
@@ -332,5 +332,23 @@ describe('scenariosForProducts', () => {
     expect(next.scenarios[1]!.name).toBe(state.products[1]!.name);
     expect(next.comparedScenarioIds.length).toBe(Math.min(MAX_COMPARED, ids.length));
     expect(scenariosForProducts(next, source.id, ids, names).scenarios).toHaveLength(ids.length);
+  });
+});
+
+describe('версия 14: ставка аренды по периодам', () => {
+  it('v13 → без периодов и по сегодняшнему курсу; периоды и режим переживают сохранение', () => {
+    const raw = JSON.parse(serializeState(defaultState()));
+    raw.version = 13;
+    delete raw.profiles[0].rent.ratePeriods;
+    delete raw.profiles[0].rent.fxMode;
+    const loaded = activeProfile(parseState(JSON.stringify(raw))).rent;
+    expect(loaded.ratePeriods).toEqual([]);
+    expect(loaded.fxMode).toBe('today');
+
+    const state = defaultState();
+    const rent = activeProfile(state).rent;
+    rent.ratePeriods = [{ id: 'q', from: '2016-09', ratePct: 18 }, { id: 'w', from: '2020-01', ratePct: 11 }];
+    rent.fxMode = 'history';
+    expect(activeProfile(roundTrip(state)).rent).toEqual(rent);
   });
 });

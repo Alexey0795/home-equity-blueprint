@@ -50,6 +50,7 @@ import { StoryMode } from './ui/StoryMode';
 import { LoanSection } from './ui/LoanSection';
 import { ProductsSection } from './ui/ProductsSection';
 import { ProfileSwitcher } from './ui/ProfileSwitcher';
+import { ReferenceDrawer } from './ui/ReferenceDrawer';
 import { RentHistorySection } from './ui/RentHistorySection';
 import { SaveInsteadSection } from './ui/SaveInsteadSection';
 import { SavingsSection } from './ui/SavingsSection';
@@ -176,6 +177,7 @@ export function App() {
   const helpOk = helpEval && !('error' in helpEval) ? helpEval : null;
   const [storyOpen, setStoryOpen] = useState(false);
   const [angle, setAngle] = useAngle();
+  const [referenceOpen, setReferenceOpen] = useState(false);
 
   const apartmentShared = sharedNote(scenariosUsing(profile, (s) => s.apartmentId === apartment.id));
   const downValue = scenario.downPayment.kind === 'manual' ? 'manual' : scenario.downPayment.planId;
@@ -197,6 +199,7 @@ export function App() {
             onDelete={() => setState((s) => deleteProfile(s, s.activeProfileId))}
           />
           {!('error' in result) && <button type="button" onClick={() => setStoryOpen(true)}>▶ Обзор по шагам</button>}
+          <button type="button" onClick={() => setReferenceOpen((v) => !v)} aria-expanded={referenceOpen}>Справка НБРБ</button>
           <DataFileButtons state={state} onImport={setState} />
         </div>
       </header>
@@ -564,6 +567,7 @@ export function App() {
       />
       )}
     </main>
+    {referenceOpen && <ReferenceDrawer onClose={() => setReferenceOpen(false)} />}
     {storyOpen && !('error' in result) && (
       <StoryMode
         scenarioName={scenario.name}

@@ -1,6 +1,19 @@
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { CURRENCIES, convert, monthText, rentFlows, rentSummary, type Currency, type FxRates } from '../domain';
-import { newId, type RentPeriodItem, type RentPlan } from '../state/appState';
+import { useState } from 'react';
+import {
+  CURRENCIES,
+  convert,
+  fxAt,
+  monthText,
+  rateAt,
+  ratePeriodsFromHistory,
+  rentFlows,
+  rentSummary,
+  type Currency,
+  type FxRates,
+} from '../domain';
+import { FX_HISTORY, REFINANCING_RATE_HISTORY } from '../reference/nbrbHistory';
+import { newId, type RatePeriodItem, type RentPeriodItem, type RentPlan } from '../state/appState';
 import { useChartColors } from './charts/colors';
 import { CurrencySelect } from './CurrencySelect';
 import { formatPct } from './describeProduct';
@@ -37,15 +50,22 @@ export function RentHistorySection({ plan, onChange, fxRates, scenarioRatePct, p
   const set = (patch: Partial<RentPlan>) => onChange({ ...plan, ...patch });
   const setPeriod = (id: string, patch: Partial<RentPeriodItem>) =>
     set({ periods: plan.periods.map((p) => (p.id === id ? { ...p, ...patch } : p)) });
+  const setRatePeriod = (id: string, patch: Partial<RatePeriodItem>) =>
+    set({ ratePeriods: plan.ratePeriods.map((p) => (p.id === id ? { ...p, ...patch } : p)) });
+  const [margin, setMargin] = useState(3);
+  /** Запасная ставка: до первого периода ставок или если периодов нет. */
   const rate = Number.isFinite(plan.loanRatePct) ? plan.loanRatePct : scenarioRatePct;
+  const byPeriods = plan.ratePeriods.length > 0;
+  const historyFx = plan.fxMode === 'history' && FX_HISTORY.length > 0;
   const asOf = thisMonth();
   const lastTo = plan.periods.reduce<string | null>((m, p) => (p.to && (!m || p.to > m) ? p.to : m), null);
 
   let body = null;
   if (plan.periods.length > 0) {
     try {
-      const flows = rentFlows(plan.periods, asOf, (a, from) => convert(a, from, plan.currency, fxRates));
-      const summary = rentSummary(flows, rate);
+      const flows = rentFlows(plan.periods, asOf, (a, from, m) =>
+        convert(a, from, plan.currency, historyFx ? fxAt(FX_HISTORY, m) ?? fxRates : fxRates));
+      const summary = rentSummary(flows, (m) => rateAt(plan.ratePeriods, m, rate));
       const byCurrency = CURRENCIES.map((c) => ({
         c,
         total: rentFlows(plan.periods.filter((p) => p.currency === c), asOf, (a) => a).reduce((s, f) => s + f.amount, 0),
@@ -70,7 +90,7 @@ export function RentHistorySection({ plan, onChange, fxRates, scenarioRatePct, p
             <div>
               <span>Тот же платёж выплатил бы кредит</span>
               <strong><BigMoney value={summary.equivalentLoan} currency={plan.currency} /></strong>
-              <span className="chip neutral">взятый в {summary.firstMonth !== null ? monthTitle(summary.firstMonth) : '—'} под {formatPct(rate)}</span>
+              <span className="chip neutral">взятый в {summary.firstMonth !== null ? monthTitle(summary.firstMonth) : '—'} {byPeriods ? 'по ставкам периодов' : `под ${formatPct(rate)}`}</span>
             </div>
             {Number.isFinite(share) && (
               <div>
@@ -96,7 +116,8 @@ export function RentHistorySection({ plan, onChange, fxRates, scenarioRatePct, p
           </ResponsiveContainer>
           <p className="hint">
             Эквивалентный кредит — сумма, которую можно было взять в первый месяц аренды, чтобы ровно эти платежи (со всеми
-            переездами и сменой цены) погасили её к {monthTitle(flows.at(-1)!.month)}. Разные валюты — по сегодняшнему курсу.
+            переездами и сменой цены) погасили её к {monthTitle(flows.at(-1)!.month)}.{' '}
+            {historyFx ? 'Разные валюты — по курсу НБРБ на начало каждого месяца (справка).' : 'Разные валюты — по сегодняшнему курсу.'}
           </p>
         </>
       );
@@ -114,7 +135,14 @@ export function RentHistorySection({ plan, onChange, fxRates, scenarioRatePct, p
           <span>Считать в валюте</span>
           <CurrencySelect label="Валюта итога" value={plan.currency} onChange={(c) => set({ currency: c })} />
         </label>
-        <NumberField label="Ставка кредита для сравнения, %" value={plan.loanRatePct} step={0.5}
+        <label className="field">
+          <span>Разные валюты пересчитывать</span>
+          <select value={plan.fxMode} onChange={(e) => set({ fxMode: e.target.value as RentPlan['fxMode'] })}>
+            <option value="today">по сегодняшнему курсу</option>
+            <option value="history">по курсу НБРБ того месяца</option>
+          </select>
+        </label>
+        <NumberField label={byPeriods ? 'Ставка до первого периода, %' : 'Ставка кредита для сравнения, %'} value={plan.loanRatePct} step={0.5}
           placeholder={`как в сценарии: ${formatPct(scenarioRatePct)}`} onChange={(loanRatePct) => set({ loanRatePct })} />
       </div>
       <h3>Периоды</h3>
@@ -145,6 +173,40 @@ export function RentHistorySection({ plan, onChange, fxRates, scenarioRatePct, p
         }}>
           + Добавить период
         </button>
+      </div>
+
+      <h3>Ставка кредита по периодам</h3>
+      <p className="hint">
+        Если ставка менялась: с какого месяца какая. Пусто — одна ставка на всё время (поле выше). Ставка рефинансирования —
+        ориентир для кредитов в BYN; для расчёта в USD или EUR ставки обычно ниже.
+      </p>
+      <div className="tranches">
+        {[...plan.ratePeriods].sort((a, b) => a.from.localeCompare(b.from)).map((p, i) => (
+          <div className="tranche" key={p.id}>
+            <label className="field">
+              <span>С месяца</span>
+              <input type="month" value={p.from} onChange={(e) => e.target.value && setRatePeriod(p.id, { from: e.target.value })} />
+            </label>
+            <NumberField label="Ставка, % годовых" value={p.ratePct} step={0.5} onChange={(ratePct) => setRatePeriod(p.id, { ratePct })} />
+            <span />
+            <button type="button" className="icon" aria-label={`Удалить ставку ${i + 1}`}
+              onClick={() => set({ ratePeriods: plan.ratePeriods.filter((x) => x.id !== p.id) })}>✕</button>
+          </div>
+        ))}
+        <button type="button" onClick={() => set({ ratePeriods: [...plan.ratePeriods, { id: newId(), from: asOf, ratePct: rate }] })}>
+          + Добавить ставку
+        </button>
+        {REFINANCING_RATE_HISTORY.length > 0 && (
+          <div className="fill-refinancing">
+            <NumberField label="Надбавка к ставке рефинансирования, п.п." value={margin} step={0.5} min={-50} onChange={setMargin} />
+            <button type="button" onClick={() => {
+              if (plan.ratePeriods.length > 0 && !window.confirm('Заменить ставки по периодам историей ставки рефинансирования?')) return;
+              set({ ratePeriods: ratePeriodsFromHistory(REFINANCING_RATE_HISTORY, Number.isFinite(margin) ? margin : 0).map((p) => ({ id: newId(), ...p })) });
+            }}>
+              Заполнить: ставка рефинансирования НБРБ + надбавка
+            </button>
+          </div>
+        )}
       </div>
       {body}
     </section>

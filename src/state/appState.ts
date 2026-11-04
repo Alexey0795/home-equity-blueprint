@@ -14,7 +14,8 @@
  *      в v7–10 её нет → newHelpPlan();
  * 12 — у `help` ставка вклада для сравнения, аренда в месяц, сколько откладываю в месяц и флаг `repay`
  *      (сумма — заём, который возвращается); в v11 → по умолчанию, `repay` = true (в v11 заём был всегда);
- * 13 — повторяющиеся транши (`help.recurring`), «Копить» (`saving`) и аренда в прошлом (`rent`) у профиля; раньше → пусто.
+ * 13 — повторяющиеся транши (`help.recurring`), «Копить» (`saving`) и аренда в прошлом (`rent`) у профиля; раньше → пусто;
+ * 14 — у аренды ставка по периодам (`rent.ratePeriods`) и пересчёт валют (`rent.fxMode`); в v13 → [] и 'today'.
  * При несовместимом изменении формата — поднять STATE_VERSION и дописать миграцию.
  */
 
@@ -36,7 +37,7 @@ import { parseLoan, type RealLoan } from './loans';
 import { parseAccount, parseProduct } from './parseShared';
 import { sampleProducts } from './sampleProducts';
 
-export const STATE_VERSION = 13;
+export const STATE_VERSION = 14;
 
 /** Квартира — компонент: цена в своей валюте (она же валюта сделки). */
 export interface Apartment {
@@ -135,11 +136,24 @@ export interface RentPeriodItem {
   currency: Currency;
 }
 
-/** Аренда в прошлом: периоды; итог и эквивалентный кредит — в currency; ставка NaN — как в выбранном сценарии. */
+/** Ставка эквивалентного кредита с месяца from («ГГГГ-ММ») до следующего периода. */
+export interface RatePeriodItem {
+  id: string;
+  from: string;
+  ratePct: number;
+}
+
+/**
+ * Аренда в прошлом: периоды; итог и эквивалентный кредит — в currency. Ставка — по периодам (ratePeriods), а до первого
+ * периода или без них — loanRatePct (NaN — как в выбранном сценарии). fxMode: 'today' — разные валюты по сегодняшнему
+ * курсу, 'history' — по курсу НБРБ того месяца из справки.
+ */
 export interface RentPlan {
   periods: RentPeriodItem[];
   currency: Currency;
   loanRatePct: number;
+  ratePeriods: RatePeriodItem[];
+  fxMode: 'today' | 'history';
 }
 
 /** Повторяющийся транш: «каждые everyMonths мес. по amount, с fromMonth по toMonth». */
@@ -156,7 +170,7 @@ export function newSavePlan(currency: Currency = 'BYN'): SavePlan {
 }
 
 export function newRentPlan(): RentPlan {
-  return { periods: [], currency: 'USD', loanRatePct: Number.NaN };
+  return { periods: [], currency: 'USD', loanRatePct: Number.NaN, ratePeriods: [], fxMode: 'today' };
 }
 
 /** Транш: month 0 — в первый взнос (до сделки), k ≥ 1 — после k-го платежа банку. */
@@ -689,8 +703,22 @@ function parseRentPlan(raw: unknown, where: string): RentPlan {
     const to = typeof x.to === 'string' && MONTH_TEXT.test(x.to) ? x.to : null;
     return { id: readId(x, iw), from, to, amount: readNumber(x, 'amount', iw), currency: readCurrency(x, iw) };
   });
-  uniqueIds(periods, 'периодов аренды');
-  return { periods, currency: readCurrency(r, w), loanRatePct: readNumber(r, 'loanRatePct', w) };
+  // До версии 14 ставки по периодам и выбора курса не было.
+  const ratePeriods = (Array.isArray(r.ratePeriods) ? r.ratePeriods : []).map((item, i): RatePeriodItem => {
+    const iw = `${w}, ставка №${i + 1}`;
+    const x = asObject(item, iw);
+    const from = readString(x, 'from');
+    if (!MONTH_TEXT.test(from)) throw new RangeError(`${iw}: месяц должен быть в виде ГГГГ-ММ`);
+    return { id: readId(x, iw), from, ratePct: readNumber(x, 'ratePct', iw) };
+  });
+  uniqueIds([...periods, ...ratePeriods], 'периодов аренды и ставок');
+  return {
+    periods,
+    currency: readCurrency(r, w),
+    loanRatePct: readNumber(r, 'loanRatePct', w),
+    ratePeriods,
+    fxMode: r.fxMode === 'history' ? 'history' : 'today',
+  };
 }
 
 function parseHelpPlan(raw: unknown, where: string): HelpPlan {
